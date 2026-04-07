@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+env/
+venv/
+.venv/
+
+# Kiro / IDE
+.vscode/
+.kiro/
+
+# Runtime artifacts
+leaderboard.json
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

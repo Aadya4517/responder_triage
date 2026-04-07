@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Email Triage v2 — OpenEnv</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#050508;--surface:rgba(255,255,255,0.04);--surface2:rgba(255,255,255,0.07);
+  --border:rgba(255,255,255,0.08);--accent:#7c6aff;--accent2:#ff6a9e;--accent3:#6affcb;
+  --urgent:#ff4d6d;--high:#ff9f43;--normal:#54a0ff;--low:#a29bfe;
+  --text:#e8e8f0;--muted:#6b6b8a;--success:#00d2a0;--mono:'JetBrains Mono',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;overflow-x:hidden;}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(124,106,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(124,106,255,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0;}
+.orb{position:fixed;border-radius:50%;filter:blur(120px);pointer-events:none;z-index:0;animation:drift 20s ease-in-out infinite alternate;}
+.orb1{width:600px;height:600px;background:rgba(124,106,255,0.12);top:-200px;left:-200px;}
+.orb2{width:500px;height:500px;background:rgba(255,106,158,0.08);bottom:-150px;right:-150px;animation-delay:-10s;}
+.orb3{width:400px;height:400px;background:rgba(106,255,203,0.06);top:40%;left:40%;animation-delay:-5s;}
+@keyframes drift{from{transform:translate(0,0) scale(1);}to{transform:translate(40px,30px) scale(1.1);}}
+.app{position:relative;z-index:1;display:grid;grid-template-rows:auto 1fr;min-height:100vh;}
+header{padding:16px 28px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);backdrop-filter:blur(20px);background:rgba(5,5,8,0.7);position:sticky;top:0;z-index:100;}
+.logo{display:flex;align-items:center;gap:10px;}
+.logo-icon{width:34px;height:34px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;}
+.logo-text{font-size:17px;font-weight:600;letter-spacing:-0.3px;}
+.logo-badge{font-size:9px;font-weight:700;letter-spacing:1px;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;border:1px solid rgba(124,106,255,0.3);padding:2px 7px;border-radius:20px;}
+.header-right{display:flex;align-items:center;gap:14px;}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--success);box-shadow:0 0 8px var(--success);animation:pulse-dot 2s ease-in-out infinite;}
+@keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1);}50%{opacity:0.5;transform:scale(0.75);}}
+.status-text{font-size:11px;color:var(--muted);}
+.header-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:500;transition:all 0.2s;font-family:'Inter',sans-serif;}
+.header-btn:hover{border-color:rgba(124,106,255,0.4);color:var(--text);}
+.header-btn.active{background:rgba(124,106,255,0.15);border-color:var(--accent);color:var(--accent);}
+main{display:grid;grid-template-columns:260px 1fr 300px;height:calc(100vh - 57px);}
+/* Sidebar */
+.sidebar{border-right:1px solid var(--border);padding:20px 12px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;}
+.sidebar-title{font-size:9px;font-weight:700;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;padding:0 8px 10px;}
+.task-btn{width:100%;padding:10px 12px;border-radius:9px;border:1px solid transparent;background:transparent;color:var(--text);font-family:'Inter',sans-serif;font-size:12px;cursor:pointer;text-align:left;transition:all 0.2s;display:flex;align-items:center;gap:9px;}
+.task-btn:hover{background:var(--surface);border-color:var(--border);}
+.task-btn.active{background:rgba(124,106,255,0.12);border-color:rgba(124,106,255,0.35);color:#fff;}
+.task-icon{font-size:15px;}
+.task-info{flex:1;}
+.task-name{font-weight:500;font-size:12px;}
+.task-desc{font-size:10px;color:var(--muted);margin-top:1px;}
+.diff-badge{font-size:8px;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:20px;text-transform:uppercase;}
+.diff-easy{background:rgba(0,210,160,0.15);color:var(--success);}
+.diff-medium{background:rgba(255,159,67,0.15);color:var(--high);}
+.diff-hard{background:rgba(255,77,109,0.15);color:var(--urgent);}
+.diff-special{background:rgba(124,106,255,0.15);color:var(--accent);}
+.sidebar-divider{height:1px;background:var(--border);margin:6px 0;}
+/* Center */
+.center{display:flex;flex-direction:column;overflow:hidden;}
+.welcome{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:40px;text-align:center;}
+.welcome-icon{width:72px;height:72px;background:linear-gradient(135deg,rgba(124,106,255,0.2),rgba(255,106,158,0.2));border:1px solid rgba(124,106,255,0.3);border-radius:22px;display:flex;align-items:center;justify-content:center;font-size:32px;animation:float 4s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0);}50%{transform:translateY(-10px);}}
+.welcome h2{font-size:26px;font-weight:700;letter-spacing:-0.5px;}
+.welcome p{color:var(--muted);font-size:14px;max-width:380px;line-height:1.6;}
+.start-btn{padding:13px 30px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:11px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s;box-shadow:0 8px 28px rgba(124,106,255,0.3);font-family:'Inter',sans-serif;}
+.start-btn:hover{transform:translateY(-2px);box-shadow:0 12px 36px rgba(124,106,255,0.4);}
+.start-btn:disabled{opacity:0.4;cursor:not-allowed;transform:none;}
+/* Episode header */
+.episode-header{padding:16px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;flex-shrink:0;}
+.ep-task{font-size:12px;font-weight:600;color:var(--accent);}
+.ep-progress{flex:1;}
+.ep-progress-label{font-size:10px;color:var(--muted);margin-bottom:5px;display:flex;justify-content:space-between;}
+.progress-bar{height:3px;background:var(--surface2);border-radius:2px;overflow:hidden;}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;transition:width 0.5s cubic-bezier(0.4,0,0.2,1);}
+/* Timer */
+.timer-badge{font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);color:var(--muted);min-width:52px;text-align:center;}
+.timer-badge.warning{border-color:rgba(255,159,67,0.5);color:var(--high);}
+.timer-badge.danger{border-color:rgba(255,77,109,0.5);color:var(--urgent);animation:pulse-dot 0.8s ease-in-out infinite;}
+/* Persona banner */
+.persona-banner{margin:0 20px;padding:10px 14px;background:rgba(124,106,255,0.08);border:1px solid rgba(124,106,255,0.2);border-radius:9px;font-size:11px;display:flex;align-items:center;gap:9px;flex-shrink:0;}
+.persona-icon{font-size:16px;}
+.persona-text{color:var(--muted);}
+.persona-text strong{color:var(--accent);}
+/* Hint banner */
+.hint-banner{margin:8px 20px 0;padding:10px 14px;background:rgba(106,255,203,0.06);border:1px solid rgba(106,255,203,0.2);border-radius:9px;font-size:11px;display:flex;align-items:flex-start;gap:9px;flex-shrink:0;animation:slideUp 0.3s ease;}
+.hint-icon{font-size:15px;flex-shrink:0;margin-top:1px;}
+.hint-text{color:rgba(106,255,203,0.8);line-height:1.5;}
+/* Email area */
+.email-area{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px;}
+.email-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;animation:slideUp 0.35s cubic-bezier(0.4,0,0.2,1);}
+@keyframes slideUp{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:translateY(0);}}
+.email-header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px;}
+.avatar{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;flex-shrink:0;background:linear-gradient(135deg,var(--accent),var(--accent2));}
+.email-meta{flex:1;}
+.email-subject{font-size:14px;font-weight:600;margin-bottom:3px;}
+.email-from{font-size:11px;color:var(--muted);}
+.email-timestamp{font-size:10px;color:var(--muted);font-family:var(--mono);}
+.noise-badge{font-size:9px;padding:2px 7px;border-radius:20px;background:rgba(255,159,67,0.15);color:var(--high);font-weight:600;}
+.adv-badge{font-size:9px;padding:2px 7px;border-radius:20px;background:rgba(255,77,109,0.15);color:var(--urgent);font-weight:600;}
+.email-body{padding:16px 18px;font-size:13px;line-height:1.7;color:rgba(232,232,240,0.85);}
+/* Action panel */
+.action-panel{padding:16px 20px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:12px;background:rgba(5,5,8,0.5);backdrop-filter:blur(10px);flex-shrink:0;}
+.action-row{display:flex;gap:10px;align-items:flex-start;}
+.action-group{flex:1;}
+.action-label{font-size:9px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:7px;}
+.pill-group{display:flex;gap:5px;flex-wrap:wrap;}
+.pill{padding:5px 12px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:11px;font-weight:500;cursor:pointer;transition:all 0.15s;font-family:'Inter',sans-serif;}
+.pill:hover{border-color:rgba(255,255,255,0.2);color:var(--text);}
+.pill.sel-urgent{background:rgba(255,77,109,0.15);border-color:var(--urgent);color:var(--urgent);}
+.pill.sel-high{background:rgba(255,159,67,0.15);border-color:var(--high);color:var(--high);}
+.pill.sel-normal{background:rgba(84,160,255,0.15);border-color:var(--normal);color:var(--normal);}
+.pill.sel-low{background:rgba(162,155,254,0.15);border-color:var(--low);color:var(--low);}
+.pill.sel-support{background:rgba(124,106,255,0.15);border-color:var(--accent);color:var(--accent);}
+.pill.sel-sales{background:rgba(0,210,160,0.15);border-color:var(--success);color:var(--success);}
+.pill.sel-spam{background:rgba(255,77,109,0.15);border-color:var(--urgent);color:var(--urgent);}
+.pill.sel-internal{background:rgba(84,160,255,0.15);border-color:var(--normal);color:var(--normal);}
+.pill.sel-billing{background:rgba(255,159,67,0.15);border-color:var(--high);color:var(--high);}
+.reply-input{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:9px 13px;color:var(--text);font-family:'Inter',sans-serif;font-size:12px;resize:none;transition:border-color 0.2s;outline:none;}
+.reply-input:focus{border-color:rgba(124,106,255,0.4);}
+.reply-input::placeholder{color:var(--muted);}
+.phishing-toggle{display:flex;align-items:center;gap:9px;padding:9px 13px;background:var(--surface);border:1px solid var(--border);border-radius:9px;cursor:pointer;transition:all 0.2s;user-select:none;}
+.phishing-toggle:hover{border-color:rgba(255,77,109,0.3);}
+.phishing-toggle.flagged{background:rgba(255,77,109,0.1);border-color:rgba(255,77,109,0.4);}
+.toggle-icon{font-size:16px;}
+.toggle-text{font-size:12px;font-weight:500;}
+.phishing-toggle.flagged .toggle-text{color:var(--urgent);}
+/* Confidence slider */
+.confidence-row{display:flex;align-items:center;gap:10px;}
+.confidence-slider{flex:1;-webkit-appearance:none;height:4px;border-radius:2px;background:var(--surface2);outline:none;cursor:pointer;}
+.confidence-slider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer;box-shadow:0 0 6px rgba(124,106,255,0.5);}
+.confidence-val{font-family:var(--mono);font-size:11px;color:var(--accent);min-width:30px;text-align:right;}
+/* Bottom action row */
+.action-bottom{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.hint-btn{background:transparent;border:1px solid rgba(106,255,203,0.25);color:rgba(106,255,203,0.7);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:11px;font-weight:600;transition:all 0.2s;font-family:'Inter',sans-serif;}
+.hint-btn:hover{background:rgba(106,255,203,0.08);border-color:rgba(106,255,203,0.5);}
+.submit-btn{padding:10px 24px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:9px;color:#fff;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;box-shadow:0 4px 18px rgba(124,106,255,0.25);font-family:'Inter',sans-serif;}
+.submit-btn:hover{transform:translateY(-1px);box-shadow:0 6px 24px rgba(124,106,255,0.35);}
+.submit-btn:disabled{opacity:0.35;cursor:not-allowed;transform:none;}
+/* Reward flash */
+.reward-flash{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(0.8);background:rgba(5,5,8,0.95);border:1px solid var(--border);border-radius:16px;padding:24px 36px;text-align:center;z-index:500;pointer-events:none;opacity:0;transition:all 0.3s cubic-bezier(0.4,0,0.2,1);}
+.reward-flash.show{opacity:1;transform:translate(-50%,-50%) scale(1);}
+.reward-flash-val{font-size:48px;font-weight:700;font-family:var(--mono);}
+.reward-flash-label{font-size:12px;color:var(--muted);margin-top:4px;}
+.reward-flash-chips{display:flex;gap:6px;justify-content:center;margin-top:10px;flex-wrap:wrap;}
+/* Done banner */
+.done-banner{margin:12px 20px;padding:14px 18px;background:linear-gradient(135deg,rgba(0,210,160,0.1),rgba(124,106,255,0.1));border:1px solid rgba(0,210,160,0.3);border-radius:11px;display:flex;align-items:center;gap:12px;animation:slideUp 0.4s ease;flex-shrink:0;}
+.done-icon{font-size:26px;}
+.done-text h3{font-size:14px;font-weight:600;}
+.done-text p{font-size:11px;color:var(--muted);margin-top:2px;}
+.reset-btn{margin-left:auto;padding:7px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:12px;font-weight:500;cursor:pointer;transition:all 0.2s;font-family:'Inter',sans-serif;}
+.reset-btn:hover{background:var(--surface);border-color:rgba(255,255,255,0.15);}
+/* Right panel */
+.right-panel{border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+.panel-tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;}
+.panel-tab{flex:1;padding:12px 6px;background:transparent;border:none;color:var(--muted);font-size:11px;font-weight:500;cursor:pointer;transition:all 0.2s;font-family:'Inter',sans-serif;border-bottom:2px solid transparent;}
+.panel-tab.active{color:var(--text);border-bottom-color:var(--accent);}
+.panel-content{flex:1;overflow-y:auto;padding:14px;}
+/* Reward chart */
+.reward-chart{background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:14px;margin-bottom:12px;}
+.chart-title{font-size:9px;font-weight:700;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px;}
+.chart-bars{display:flex;align-items:flex-end;gap:3px;height:70px;}
+.chart-bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;}
+.chart-bar{width:100%;border-radius:3px 3px 0 0;transition:height 0.5s cubic-bezier(0.4,0,0.2,1);min-height:2px;}
+.chart-bar-label{font-size:8px;color:var(--muted);font-family:var(--mono);}
+/* Score summary */
+.score-summary{background:linear-gradient(135deg,rgba(124,106,255,0.1),rgba(255,106,158,0.1));border:1px solid rgba(124,106,255,0.2);border-radius:11px;padding:18px;text-align:center;animation:slideUp 0.4s ease;}
+.score-big{font-size:44px;font-weight:700;letter-spacing:-2px;font-family:var(--mono);}
+.score-label{font-size:11px;color:var(--muted);margin-top:3px;}
+.score-grade{display:inline-block;margin-top:10px;padding:5px 18px;border-radius:20px;font-size:12px;font-weight:600;}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:10px;}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:10px;text-align:center;}
+.stat-val{font-size:18px;font-weight:700;font-family:var(--mono);}
+.stat-lbl{font-size:9px;color:var(--muted);margin-top:2px;}
+/* Live stats */
+.live-stats{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:12px;}
+/* Step log */
+.log-entry{padding:9px 11px;background:var(--surface);border:1px solid var(--border);border-radius:7px;margin-bottom:7px;animation:slideUp 0.3s ease;}
+.log-entry-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;}
+.log-step-num{font-family:var(--mono);font-size:10px;color:var(--muted);}
+.log-reward{font-family:var(--mono);font-size:12px;font-weight:600;}
+.log-breakdown{display:flex;gap:5px;flex-wrap:wrap;}
+.log-chip{font-size:9px;padding:2px 7px;border-radius:4px;font-family:var(--mono);}
+.chip-good{background:rgba(0,210,160,0.15);color:var(--success);}
+.chip-bad{background:rgba(255,77,109,0.15);color:var(--urgent);}
+.chip-mid{background:rgba(255,159,67,0.15);color:var(--high);}
+/* Analytics */
+.analytics-section{margin-bottom:14px;}
+.analytics-title{font-size:9px;font-weight:700;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;}
+.analytics-bar-row{display:flex;align-items:center;gap:7px;margin-bottom:7px;}
+.analytics-cat-label{font-size:10px;color:var(--muted);width:52px;flex-shrink:0;text-transform:capitalize;}
+.analytics-bar-bg{flex:1;background:var(--surface2);border-radius:99px;height:6px;overflow:hidden;}
+.analytics-bar-fill{height:100%;border-radius:99px;transition:width 0.5s ease;}
+.analytics-pct{font-size:9px;font-family:var(--mono);color:var(--muted);width:28px;text-align:right;flex-shrink:0;}
+/* Leaderboard */
+.lb-save-row{display:flex;gap:7px;margin-bottom:12px;}
+.lb-name-input{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:7px 11px;color:var(--text);font-size:12px;outline:none;transition:border-color 0.2s;font-family:'Inter',sans-serif;}
+.lb-name-input:focus{border-color:var(--accent);}
+.btn-save-score{background:var(--accent);color:#fff;border:none;padding:7px 13px;border-radius:7px;cursor:pointer;font-size:11px;font-weight:600;white-space:nowrap;transition:all 0.2s;font-family:'Inter',sans-serif;}
+.btn-save-score:hover{background:#6a58e8;}
+.btn-save-score:disabled{opacity:0.4;cursor:not-allowed;}
+.lb-filters{display:flex;gap:5px;margin-bottom:10px;flex-wrap:wrap;}
+.lb-filter-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:4px 10px;border-radius:5px;cursor:pointer;font-size:10px;font-weight:600;transition:all 0.2s;font-family:'Inter',sans-serif;}
+.lb-filter-btn.active{background:rgba(124,106,255,0.15);border-color:var(--accent);color:var(--accent);}
+.lb-table{width:100%;border-collapse:collapse;font-size:11px;}
+.lb-table th{color:var(--muted);font-weight:600;text-align:left;padding:5px 7px;border-bottom:1px solid var(--border);font-size:9px;letter-spacing:0.5px;}
+.lb-table td{padding:6px 7px;border-bottom:1px solid rgba(255,255,255,0.04);}
+.lb-table tr:hover td{background:var(--surface);}
+.lb-empty{text-align:center;color:var(--muted);font-size:11px;padding:20px;}
+/* AI autoplay */
+.autoplay-bar{display:flex;align-items:center;gap:8px;padding:8px 14px;background:rgba(124,106,255,0.07);border:1px solid rgba(124,106,255,0.2);border-radius:9px;margin:0 20px;flex-shrink:0;}
+.autoplay-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse-dot 1s ease-in-out infinite;}
+.autoplay-text{font-size:11px;color:var(--accent);flex:1;}
+.autoplay-stop{background:transparent;border:1px solid rgba(255,77,109,0.4);color:var(--urgent);padding:4px 10px;border-radius:5px;cursor:pointer;font-size:10px;font-weight:600;font-family:'Inter',sans-serif;}
+/* Confetti */
+#confetti-canvas{position:fixed;inset:0;pointer-events:none;z-index:9999;}
+/* Scrollbar */
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px;}
+@media(max-width:900px){main{grid-template-columns:1fr;}.sidebar{display:none;}.right-panel{height:280px;}}
+</style>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#050508;--surface:rgba(255,255,255,0.04);--surface2:rgba(255,255,255,0.07);
+  --border:rgba(255,255,255,0.08);--accent:#7c6aff;--accent2:#ff6a9e;--accent3:#6affcb;
+  --urgent:#ff4d6d;--high:#ff9f43;--normal:#54a0ff;--low:#a29bfe;
+  --text:#e8e8f0;--muted:#6b6b8a;--success:#00d2a0;--mono:'JetBrains Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;overflow-x:hidden;}
+.bg-grid{position:fixed;inset:0;background-image:linear-gradient(rgba(124,106,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(124,106,255,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0;}
+.orb{position:fixed;border-radius:50%;filter:blur(80px);pointer-events:none;z-index:0;}
+.orb1{width:400px;height:400px;background:rgba(124,106,255,0.12);top:-100px;left:-100px;}
+.orb2{width:350px;height:350px;background:rgba(255,106,158,0.08);bottom:-80px;right:-80px;}
+.orb3{width:300px;height:300px;background:rgba(106,255,203,0.06);top:50%;left:50%;transform:translate(-50%,-50%);}
+header{position:sticky;top:0;z-index:100;background:rgba(5,5,8,0.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;gap:16px;}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.1rem;}
+.logo-badge{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:0.6rem;font-weight:700;padding:2px 6px;border-radius:4px;letter-spacing:1px;}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--success);box-shadow:0 0 8px var(--success);animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.5;}}
+.header-spacer{flex:1;}
+.streak-counter{display:flex;align-items:center;gap:6px;font-size:0.85rem;font-weight:600;color:var(--high);}
+.timer-display{font-family:var(--mono);font-size:0.85rem;color:var(--muted);background:var(--surface);padding:4px 10px;border-radius:6px;border:1px solid var(--border);}
+.btn-autoplay{background:rgba(106,255,203,0.1);border:1px solid rgba(106,255,203,0.3);color:var(--accent3);padding:6px 14px;border-radius:8px;cursor:pointer;font-size:0.78rem;font-weight:600;transition:all 0.2s;white-space:nowrap;}
+.btn-autoplay:hover{background:rgba(106,255,203,0.18);}
+.btn-autoplay.playing{background:rgba(255,77,109,0.1);border-color:rgba(255,77,109,0.3);color:var(--urgent);}
+.app-layout{display:grid;grid-template-columns:280px 1fr 320px;min-height:calc(100vh - 56px);position:relative;z-index:1;}
+.sidebar{border-right:1px solid var(--border);padding:16px;overflow-y:auto;background:rgba(5,5,8,0.4);}
+.sidebar-section-label{font-size:0.7rem;font-weight:600;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin:16px 0 8px;padding:0 4px;}
+.task-btn{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer;text-align:left;color:var(--text);transition:all 0.2s;margin-bottom:6px;display:flex;align-items:flex-start;gap:10px;}
+.task-btn:hover{background:var(--surface2);border-color:rgba(124,106,255,0.3);}
+.task-btn.active{background:rgba(124,106,255,0.15);border-color:var(--accent);box-shadow:0 0 12px rgba(124,106,255,0.2);}
+.task-icon{font-size:1.2rem;flex-shrink:0;margin-top:1px;}
+.task-info{flex:1;min-width:0;}
+.task-name{font-size:0.85rem;font-weight:600;margin-bottom:2px;}
+.task-desc{font-size:0.72rem;color:var(--muted);line-height:1.4;}
+.diff-badge{font-size:0.65rem;font-weight:700;padding:2px 6px;border-radius:4px;margin-top:4px;display:inline-block;}
+.diff-easy{background:rgba(0,210,160,0.15);color:var(--success);}
+.diff-medium{background:rgba(255,159,67,0.15);color:var(--high);}
+.diff-hard{background:rgba(255,77,109,0.15);color:var(--urgent);}
+.diff-creative{background:rgba(124,106,255,0.15);color:var(--accent);}
+.sidebar-divider{border:none;border-top:1px solid var(--border);margin:12px 0;}
+.center-panel{padding:24px;overflow-y:auto;display:flex;flex-direction:column;gap:16px;}
+.welcome-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;text-align:center;gap:20px;padding:60px 20px;}
+.welcome-icon{font-size:4rem;animation:float 3s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0);}50%{transform:translateY(-12px);}}
+.welcome-title{font-size:1.8rem;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.welcome-desc{color:var(--muted);max-width:420px;line-height:1.6;font-size:0.9rem;}
+.btn-start{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;padding:12px 32px;border-radius:10px;font-size:1rem;font-weight:600;cursor:pointer;transition:all 0.2s;opacity:0.4;pointer-events:none;}
+.btn-start.enabled{opacity:1;pointer-events:auto;box-shadow:0 4px 20px rgba(124,106,255,0.4);}
+.btn-start.enabled:hover{transform:translateY(-2px);box-shadow:0 6px 28px rgba(124,106,255,0.5);}
+.episode-screen{display:none;flex-direction:column;gap:16px;}
+.episode-header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.episode-label{font-size:0.8rem;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:1px;}
+.progress-bar-wrap{flex:1;background:var(--surface2);border-radius:99px;height:6px;min-width:80px;}
+.progress-bar-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width 0.4s ease;}
+.progress-text{font-size:0.75rem;color:var(--muted);font-family:var(--mono);}
+.btn-reset{background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:8px;cursor:pointer;font-size:0.8rem;transition:all 0.2s;margin-left:auto;}
+.btn-reset:hover{border-color:var(--urgent);color:var(--urgent);}
+.persona-banner{background:linear-gradient(135deg,rgba(124,106,255,0.1),rgba(255,106,158,0.1));border:1px solid rgba(124,106,255,0.3);border-radius:10px;padding:10px 14px;font-size:0.82rem;display:none;}
+.persona-banner.show{display:block;}
+.persona-name{font-weight:700;color:var(--accent);margin-bottom:2px;}
+.persona-desc{color:var(--muted);}
+</style>
+</head>
+
+<body>
+<canvas id="confetti-canvas"></canvas>
+<div class="orb orb1"></div><div class="orb orb2"></div><div class="orb orb3"></div>
+<div id="rewardFlash" class="reward-flash">
+  <div class="reward-flash-val" id="rfVal">1.00</div>
+  <div class="reward-flash-label">Step Reward</div>
+  <div class="reward-flash-chips" id="rfChips"></div>
+</div>
+<div class="app">
+  <header>
+    <div class="logo">
+      <div class="logo-icon">📬</div>
+      <span class="logo-text">Email Triage</span>
+      <span class="logo-badge">OPENENV v2</span>
+    </div>
+    <div class="header-right">
+      <button class="header-btn" id="aiPlayBtn" onclick="toggleAIPlay()">🤖 AI Auto-Play</button>
+      <div class="status-dot"></div>
+      <span class="status-text" id="statusText">Ready</span>
+      <span style="font-size:11px;color:var(--muted);border-left:1px solid var(--border);padding-left:14px;letter-spacing:0.5px;">by <span style="color:var(--accent);font-weight:600;">BitShift</span></span>
+    </div>
+  </header>
+  <main>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-title">Standard Tasks</div>
+      <button class="task-btn" data-task="easy" onclick="selectTask('easy')">
+        <span class="task-icon">📋</span>
+        <div class="task-info"><div class="task-name">Easy</div><div class="task-desc">Priority only · 5 emails</div></div>
+        <span class="diff-badge diff-easy">Easy</span>
+      </button>
+      <button class="task-btn" data-task="medium" onclick="selectTask('medium')">
+        <span class="task-icon">📊</span>
+        <div class="task-info"><div class="task-name">Medium</div><div class="task-desc">Priority + Category · 8 emails</div></div>
+        <span class="diff-badge diff-medium">Med</span>
+      </button>
+      <button class="task-btn" data-task="hard" onclick="selectTask('hard')">
+        <span class="task-icon">🔥</span>
+        <div class="task-info"><div class="task-name">Hard</div><div class="task-desc">Full triage + Reply · 10 emails</div></div>
+        <span class="diff-badge diff-hard">Hard</span>
+      </button>
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-title">Creative Tasks</div>
+      <button class="task-btn" data-task="adversarial" onclick="selectTask('adversarial')">
+        <span class="task-icon">🎭</span>
+        <div class="task-info"><div class="task-name">Adversarial</div><div class="task-desc">Detect phishing · 4 emails</div></div>
+        <span class="diff-badge diff-special">New</span>
+      </button>
+      <button class="task-btn" data-task="persona_startup" onclick="selectTask('persona_startup')">
+        <span class="task-icon">🚀</span>
+        <div class="task-info"><div class="task-name">Startup CTO</div><div class="task-desc">Role-aware triage · 7 emails</div></div>
+        <span class="diff-badge diff-special">New</span>
+      </button>
+      <button class="task-btn" data-task="persona_support" onclick="selectTask('persona_support')">
+        <span class="task-icon">🎧</span>
+        <div class="task-info"><div class="task-name">Support Manager</div><div class="task-desc">Role-aware triage · 7 emails</div></div>
+        <span class="diff-badge diff-special">New</span>
+      </button>
+      <button class="task-btn" data-task="noisy_easy" onclick="selectTask('noisy_easy')">
+        <span class="task-icon">📡</span>
+        <div class="task-info"><div class="task-name">Noisy (Easy)</div><div class="task-desc">30% corruption · 5 emails</div></div>
+        <span class="diff-badge diff-medium">Noisy</span>
+      </button>
+      <button class="task-btn" data-task="noisy_hard" onclick="selectTask('noisy_hard')">
+        <span class="task-icon">🌪️</span>
+        <div class="task-info"><div class="task-name">Noisy (Hard)</div><div class="task-desc">70% corruption · 10 emails</div></div>
+        <span class="diff-badge diff-hard">Noisy</span>
+      </button>
+    </aside>
+
+    <!-- Center panel -->
+    <section class="center" id="centerPanel">
+      <!-- Welcome -->
+      <div class="welcome" id="welcomeScreen">
+        <div class="welcome-icon">📬</div>
+        <h2>Email Triage v2</h2>
+        <p>Select a task, triage emails manually or watch the AI auto-play. Earn points, climb the leaderboard, and track your accuracy.</p>
+        <button class="start-btn" id="startBtn" onclick="startEpisode()" disabled>Select a task to begin</button>
+      </div>
+
+      <!-- Episode screen -->
+      <div id="episodeScreen" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
+        <div class="episode-header">
+          <div><div class="ep-task" id="epTaskLabel">—</div></div>
+          <div class="ep-progress" style="flex:1;margin:0 16px;">
+            <div class="ep-progress-label"><span>Progress</span><span id="progressLabel">0 / 0</span></div>
+            <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+          </div>
+          <div class="timer-badge" id="timerBadge">0s</div>
+          <button class="reset-btn" onclick="resetEpisode()">↺ Reset</button>
+        </div>
+
+        <div id="personaBanner" style="display:none;" class="persona-banner">
+          <span class="persona-icon" id="personaIcon">👤</span>
+          <span class="persona-text" id="personaText"></span>
+        </div>
+
+        <div id="autoplayBar" style="display:none;" class="autoplay-bar">
+          <div class="autoplay-dot"></div>
+          <span class="autoplay-text" id="autoplayText">AI is thinking...</span>
+          <button class="autoplay-stop" onclick="stopAIPlay()">■ Stop</button>
+        </div>
+
+        <div id="hintBanner" style="display:none;" class="hint-banner">
+          <span class="hint-icon">💡</span>
+          <span class="hint-text" id="hintText"></span>
+        </div>
+
+        <div class="email-area" id="emailArea"></div>
+
+        <div class="action-panel" id="actionPanel">
+          <div class="action-row">
+            <div class="action-group" id="priorityGroup">
+              <div class="action-label">Priority</div>
+              <div class="pill-group" id="priorityPills">
+                <button class="pill" onclick="selectPriority('urgent')">🔴 Urgent</button>
+                <button class="pill" onclick="selectPriority('high')">🟠 High</button>
+                <button class="pill" onclick="selectPriority('normal')">🔵 Normal</button>
+                <button class="pill" onclick="selectPriority('low')">🟣 Low</button>
+              </div>
+            </div>
+            <div class="action-group" id="categoryGroup">
+              <div class="action-label">Category</div>
+              <div class="pill-group" id="categoryPills">
+                <button class="pill" onclick="selectCategory('support')">🛠 Support</button>
+                <button class="pill" onclick="selectCategory('sales')">💼 Sales</button>
+                <button class="pill" onclick="selectCategory('spam')">🚫 Spam</button>
+                <button class="pill" onclick="selectCategory('internal')">🏢 Internal</button>
+                <button class="pill" onclick="selectCategory('billing')">💳 Billing</button>
+              </div>
+            </div>
+          </div>
+          <div id="replyGroup" style="display:none;">
+            <div class="action-label">Reply</div>
+            <textarea class="reply-input" id="replyInput" rows="2" placeholder="Draft a professional reply..."></textarea>
+          </div>
+          <div id="phishingGroup" style="display:none;">
+            <div class="action-label">Phishing Detection</div>
+            <div class="phishing-toggle" id="phishingToggle" onclick="togglePhishing()">
+              <span class="toggle-icon">🎣</span>
+              <span class="toggle-text" id="phishingText">Mark as phishing attempt</span>
+            </div>
+          </div>
+          <div>
+            <div class="action-label">Confidence</div>
+            <div class="confidence-row">
+              <input type="range" class="confidence-slider" id="confidenceSlider" min="0" max="100" value="80" oninput="updateConfidence(this.value)"/>
+              <span class="confidence-val" id="confidenceVal">80%</span>
+            </div>
+          </div>
+          <div class="action-bottom">
+            <button class="hint-btn" onclick="fetchHint()">💡 Get Hint</button>
+            <button class="submit-btn" id="submitBtn" onclick="submitAction()">Submit Triage →</button>
+          </div>
+        </div>
+
+        <div id="doneBanner" style="display:none;" class="done-banner">
+          <span class="done-icon">🎉</span>
+          <div class="done-text">
+            <h3>Episode Complete!</h3>
+            <p id="doneScore">Final score: —</p>
+          </div>
+          <button class="reset-btn" onclick="resetEpisode()">↺ Try Again</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right panel -->
+    <aside class="right-panel">
+      <div class="panel-tabs">
+        <button class="panel-tab active" onclick="switchTab('rewards',this)">Rewards</button>
+        <button class="panel-tab" onclick="switchTab('log',this)">Log</button>
+        <button class="panel-tab" onclick="switchTab('analytics',this)">Analytics</button>
+        <button class="panel-tab" onclick="switchTab('leaderboard',this)">Board</button>
+      </div>
+
+      <!-- Rewards tab -->
+      <div class="panel-content" id="rewardsTab">
+        <div class="reward-chart">
+          <div class="chart-title">Reward per Step</div>
+          <div class="chart-bars" id="chartBars"><div style="color:var(--muted);font-size:11px;margin:auto;">No data yet</div></div>
+        </div>
+        <div class="live-stats" id="liveStats" style="display:none;">
+          <div class="stat-card"><div class="stat-val" id="statStep">0</div><div class="stat-lbl">Steps</div></div>
+          <div class="stat-card"><div class="stat-val" id="statCumulative">0.00</div><div class="stat-lbl">Cumulative</div></div>
+          <div class="stat-card"><div class="stat-val" id="statMean">0.00</div><div class="stat-lbl">Mean</div></div>
+          <div class="stat-card"><div class="stat-val" id="statBest">—</div><div class="stat-lbl">Best Step</div></div>
+        </div>
+        <div id="scoreSection" style="display:none;">
+          <div class="score-summary">
+            <div class="score-big" id="scoreBig">—</div>
+            <div class="score-label">Mean Reward</div>
+            <div class="score-grade" id="scoreGrade"></div>
+          </div>
+          <div class="stats-grid" id="statsGrid"></div>
+        </div>
+      </div>
+
+      <!-- Log tab -->
+      <div class="panel-content" id="logTab" style="display:none;">
+        <div id="stepLog"><div style="color:var(--muted);font-size:11px;text-align:center;padding:20px;">Steps will appear here</div></div>
+      </div>
+
+      <!-- Analytics tab -->
+      <div class="panel-content" id="analyticsTab" style="display:none;">
+        <div class="analytics-section">
+          <div class="analytics-title">Category Accuracy</div>
+          <div id="catAnalytics"><div style="color:var(--muted);font-size:11px;text-align:center;padding:16px;">Submit steps to see analytics</div></div>
+        </div>
+        <div class="analytics-section">
+          <div class="analytics-title">Priority Accuracy</div>
+          <div id="priAnalytics"></div>
+        </div>
+      </div>
+
+      <!-- Leaderboard tab -->
+      <div class="panel-content" id="leaderboardTab" style="display:none;">
+        <div class="lb-save-row" id="lbSaveRow" style="display:none;">
+          <input class="lb-name-input" id="lbNameInput" placeholder="Your name..." maxlength="32"/>
+          <button class="btn-save-score" id="lbSaveBtn" onclick="saveScore()">Save Score</button>
+        </div>
+        <div class="lb-filters">
+          <button class="lb-filter-btn active" onclick="filterLB('all',this)">All</button>
+          <button class="lb-filter-btn" onclick="filterLB('easy',this)">Easy</button>
+          <button class="lb-filter-btn" onclick="filterLB('medium',this)">Medium</button>
+          <button class="lb-filter-btn" onclick="filterLB('hard',this)">Hard</button>
+        </div>
+        <div id="lbContent"><div class="lb-empty">Loading...</div></div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let selectedTask = null, currentObs = null;
+let selPriority = null, selCategory = null;
+let isPhishing = false, confidence = 80;
+let episodeRewards = [], stepCount = 0, totalSteps = 0;
+let episodeDone = false, episodeStartTime = null, stepStartTime = null;
+let timerInterval = null, aiPlaying = false, aiTimeout = null;
+let lastScore = null, lastTaskId = null;
+let lbFilter = 'all';
+
+const TASK_META = {
+  easy:            { label:'Easy — Priority Only',         fields:['priority'] },
+  medium:          { label:'Medium — Priority + Category', fields:['priority','category'] },
+  hard:            { label:'Hard — Full Triage',           fields:['priority','category','reply'] },
+  adversarial:     { label:'Adversarial — Phishing Hunt',  fields:['priority','category','phishing'] },
+  persona_startup: { label:'Persona — Startup CTO',        fields:['priority','category'], persona:'startup_cto' },
+  persona_support: { label:'Persona — Support Manager',    fields:['priority','category'], persona:'enterprise_support' },
+  noisy_easy:      { label:'Noisy Easy — 30% Corruption',  fields:['priority','category'] },
+  noisy_hard:      { label:'Noisy Hard — 70% Corruption',  fields:['priority','category'] },
+};
+
+const PERSONA_INFO = {
+  startup_cto:        { icon:'🚀', text:'You are a <strong>Startup CTO</strong>. Sales leads are urgent. Internal meetings are low priority.' },
+  enterprise_support: { icon:'🎧', text:'You are an <strong>Enterprise Support Manager</strong>. Customer issues always come first.' },
+};
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function setStatus(t) { document.getElementById('statusText').textContent = t; }
+
+function gradeColor(r) {
+  if (r >= 0.9) return '#00d2a0';
+  if (r >= 0.7) return '#54a0ff';
+  if (r >= 0.5) return '#ff9f43';
+  return '#ff4d6d';
+}
+
+function gradeLabel(r) {
+  if (r >= 0.9) return { text:'S Rank', bg:'rgba(0,210,160,0.15)', color:'#00d2a0' };
+  if (r >= 0.75) return { text:'A Rank', bg:'rgba(84,160,255,0.15)', color:'#54a0ff' };
+  if (r >= 0.6) return { text:'B Rank', bg:'rgba(255,159,67,0.15)', color:'#ff9f43' };
+  return { text:'C Rank', bg:'rgba(255,77,109,0.15)', color:'#ff4d6d' };
+}
+
+function avatarLetter(sender) {
+  return (sender || '?').split('@')[0].charAt(0).toUpperCase();
+}
+
+// ── Task selection ─────────────────────────────────────────────────────────
+function selectTask(taskId) {
+  selectedTask = taskId;
+  document.querySelectorAll('.task-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`[data-task="${taskId}"]`).classList.add('active');
+  const btn = document.getElementById('startBtn');
+  btn.textContent = `▶ Start "${TASK_META[taskId].label}"`;
+  btn.disabled = false;
+  setStatus('Task selected — click Start');
+}
+
+// ── Episode lifecycle ──────────────────────────────────────────────────────
+async function startEpisode() {
+  if (!selectedTask) return;
+  setStatus('Starting...');
+  document.getElementById('startBtn').disabled = true;
+  try {
+    const res = await fetch('/reset', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ task_id: selectedTask }) });
+    currentObs = await res.json();
+    episodeRewards = []; stepCount = 0; totalSteps = currentObs.total_steps;
+    episodeDone = false; lastScore = null; lastTaskId = selectedTask;
+    episodeStartTime = Date.now(); stepStartTime = Date.now();
+    document.getElementById('welcomeScreen').style.display = 'none';
+    const ep = document.getElementById('episodeScreen');
+    ep.style.display = 'flex';
+    document.getElementById('scoreSection').style.display = 'none';
+    document.getElementById('doneBanner').style.display = 'none';
+    document.getElementById('lbSaveRow').style.display = 'none';
+    document.getElementById('liveStats').style.display = 'grid';
+    document.getElementById('stepLog').innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px;">Steps will appear here</div>';
+    document.getElementById('chartBars').innerHTML = '<div style="color:var(--muted);font-size:11px;margin:auto;">No data yet</div>';
+    renderObs(currentObs);
+    startTimer();
+    setStatus(`Episode started — ${totalSteps} emails`);
+  } catch(e) { setStatus('Error: ' + e.message); document.getElementById('startBtn').disabled = false; }
+}
+
+function resetEpisode() {
+  stopAIPlay();
+  clearInterval(timerInterval);
+  selPriority = null; selCategory = null; isPhishing = false;
+  document.getElementById('episodeScreen').style.display = 'none';
+  document.getElementById('welcomeScreen').style.display = 'flex';
+  document.getElementById('startBtn').disabled = !selectedTask;
+  if (selectedTask) document.getElementById('startBtn').textContent = `▶ Start "${TASK_META[selectedTask].label}"`;
+  document.getElementById('timerBadge').textContent = '0s';
+  document.getElementById('timerBadge').className = 'timer-badge';
+  setStatus('Ready');
+}
+
+// ── Render observation ─────────────────────────────────────────────────────
+function renderObs(obs) {
+  const meta = TASK_META[obs.task_id] || {};
+  const fields = meta.fields || ['priority','category'];
+
+  // Episode header
+  document.getElementById('epTaskLabel').textContent = meta.label || obs.task_id;
+  document.getElementById('progressLabel').textContent = `${obs.step + 1} / ${obs.total_steps}`;
+  document.getElementById('progressFill').style.width = `${((obs.step) / obs.total_steps) * 100}%`;
+
+  // Persona banner
+  const pb = document.getElementById('personaBanner');
+  if (obs.persona && PERSONA_INFO[obs.persona]) {
+    const pi = PERSONA_INFO[obs.persona];
+    document.getElementById('personaIcon').textContent = pi.icon;
+    document.getElementById('personaText').innerHTML = pi.text;
+    pb.style.display = 'flex';
+  } else { pb.style.display = 'none'; }
+
+  // Hide hint
+  document.getElementById('hintBanner').style.display = 'none';
+
+  // Email card
+  const email = obs.email;
+  const area = document.getElementById('emailArea');
+  area.innerHTML = `
+    <div class="email-card">
+      <div class="email-header">
+        <div class="avatar">${avatarLetter(email.sender)}</div>
+        <div class="email-meta">
+          <div class="email-subject">${escHtml(email.subject)}</div>
+          <div class="email-from">From: ${escHtml(email.sender)}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+          <div class="email-timestamp">${email.timestamp ? email.timestamp.replace('T',' ').replace('Z','') : ''}</div>
+          ${email.noise_level > 0 ? `<span class="noise-badge">⚡ ${Math.round(email.noise_level*100)}% noise</span>` : ''}
+          ${obs.task_id === 'adversarial' ? '<span class="adv-badge">🎭 Adversarial</span>' : ''}
+        </div>
+      </div>
+      <div class="email-body">${escHtml(email.body)}</div>
+    </div>`;
+
+  // Show/hide action groups
+  document.getElementById('categoryGroup').style.display = fields.includes('category') ? 'block' : 'none';
+  document.getElementById('replyGroup').style.display = fields.includes('reply') ? 'block' : 'none';
+  document.getElementById('phishingGroup').style.display = fields.includes('phishing') ? 'block' : 'none';
+
+  // Reset selections
+  selPriority = null; selCategory = null; isPhishing = false;
+  document.querySelectorAll('#priorityPills .pill').forEach(p => p.className = 'pill');
+  document.querySelectorAll('#categoryPills .pill').forEach(p => p.className = 'pill');
+  document.getElementById('phishingToggle').classList.remove('flagged');
+  document.getElementById('phishingText').textContent = 'Mark as phishing attempt';
+  if (document.getElementById('replyInput')) document.getElementById('replyInput').value = '';
+  document.getElementById('submitBtn').disabled = false;
+  document.getElementById('actionPanel').style.display = 'flex';
+  stepStartTime = Date.now();
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Selections ─────────────────────────────────────────────────────────────
+function selectPriority(v) {
+  selPriority = v;
+  document.querySelectorAll('#priorityPills .pill').forEach(p => {
+    p.className = 'pill' + (p.textContent.toLowerCase().includes(v) ? ` sel-${v}` : '');
+  });
+}
+
+function selectCategory(v) {
+  selCategory = v;
+  document.querySelectorAll('#categoryPills .pill').forEach(p => {
+    p.className = 'pill' + (p.textContent.toLowerCase().includes(v) ? ` sel-${v}` : '');
+  });
+}
+
+function togglePhishing() {
+  isPhishing = !isPhishing;
+  const t = document.getElementById('phishingToggle');
+  const txt = document.getElementById('phishingText');
+  t.classList.toggle('flagged', isPhishing);
+  txt.textContent = isPhishing ? '⚠️ Flagged as phishing' : 'Mark as phishing attempt';
+}
+
+function updateConfidence(val) {
+  confidence = parseInt(val);
+  document.getElementById('confidenceVal').textContent = val + '%';
+}
+
+// ── Submit ─────────────────────────────────────────────────────────────────
+async function submitAction() {
+  if (!selPriority) { flashStatus('Select a priority first'); return; }
+  const fields = TASK_META[selectedTask]?.fields || [];
+  if (fields.includes('category') && !selCategory) { flashStatus('Select a category first'); return; }
+
+  document.getElementById('submitBtn').disabled = true;
+  const timeTaken = (Date.now() - stepStartTime) / 1000;
+
+  const body = {
+    priority: selPriority,
+    category: selCategory || 'support',
+    reply: document.getElementById('replyInput')?.value || null,
+    is_phishing: isPhishing,
+    confidence: confidence / 100,
+    time_taken: timeTaken,
+  };
+
+  try {
+    const res = await fetch('/step', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const data = await res.json();
+    if (!res.ok) { flashStatus(data.detail || 'Error'); document.getElementById('submitBtn').disabled = false; return; }
+
+    const reward = data.reward;
+    episodeRewards.push(reward.value);
+    stepCount++;
+
+    showRewardFlash(reward);
+    updateChart();
+    updateLiveStats();
+    addLogEntry(stepCount, reward);
+
+    if (data.done) {
+      episodeDone = true;
+      clearInterval(timerInterval);
+      showDone();
+      fetchAnalytics();
+    } else {
+      currentObs = data.observation;
+      renderObs(currentObs);
+    }
+  } catch(e) { flashStatus('Network error'); document.getElementById('submitBtn').disabled = false; }
+}
+
+function flashStatus(msg) {
+  setStatus(msg);
+  setTimeout(() => setStatus(episodeDone ? 'Done' : 'In progress'), 2000);
+}
+
+// ── Reward flash overlay ───────────────────────────────────────────────────
+function showRewardFlash(reward) {
+  const el = document.getElementById('rewardFlash');
+  const val = document.getElementById('rfVal');
+  const chips = document.getElementById('rfChips');
+  val.textContent = reward.value.toFixed(2);
+  val.style.color = gradeColor(reward.value);
+  chips.innerHTML = Object.entries(reward.breakdown || {}).map(([k,v]) => {
+    const cls = v >= 1 ? 'chip-good' : v >= 0.5 ? 'chip-mid' : 'chip-bad';
+    return `<span class="log-chip ${cls}">${k}: ${v.toFixed(2)}</span>`;
+  }).join('');
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 1200);
+}
+
+// ── Chart ──────────────────────────────────────────────────────────────────
+function updateChart() {
+  const container = document.getElementById('chartBars');
+  if (!episodeRewards.length) return;
+  container.innerHTML = episodeRewards.map((r, i) => {
+    const h = Math.round(r * 70);
+    const col = gradeColor(r);
+    return `<div class="chart-bar-wrap">
+      <div class="chart-bar" style="height:${h}px;background:${col};opacity:0.85;" title="Step ${i+1}: ${r.toFixed(2)}"></div>
+      <div class="chart-bar-label">${r.toFixed(1)}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Live stats ─────────────────────────────────────────────────────────────
+function updateLiveStats() {
+  const mean = episodeRewards.reduce((a,b)=>a+b,0) / episodeRewards.length;
+  const best = Math.max(...episodeRewards);
+  document.getElementById('statStep').textContent = stepCount;
+  document.getElementById('statCumulative').textContent = episodeRewards.reduce((a,b)=>a+b,0).toFixed(2);
+  document.getElementById('statMean').textContent = mean.toFixed(2);
+  document.getElementById('statBest').textContent = best.toFixed(2);
+}
+
+// ── Log entry ──────────────────────────────────────────────────────────────
+function addLogEntry(step, reward) {
+  const log = document.getElementById('stepLog');
+  if (log.querySelector('[style*="text-align:center"]')) log.innerHTML = '';
+  const chips = Object.entries(reward.breakdown || {}).map(([k,v]) => {
+    const cls = v >= 1 ? 'chip-good' : v >= 0.5 ? 'chip-mid' : 'chip-bad';
+    return `<span class="log-chip ${cls}">${k}: ${v.toFixed(2)}</span>`;
+  }).join('');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  entry.innerHTML = `
+    <div class="log-entry-header">
+      <span class="log-step-num">Step ${step}</span>
+      <span class="log-reward" style="color:${gradeColor(reward.value)}">${reward.value.toFixed(2)}</span>
+    </div>
+    <div class="log-breakdown">${chips}</div>`;
+  log.prepend(entry);
+}
+
+// ── Done ───────────────────────────────────────────────────────────────────
+function showDone() {
+  const mean = episodeRewards.reduce((a,b)=>a+b,0) / episodeRewards.length;
+  lastScore = mean;
+  const grade = gradeLabel(mean);
+  document.getElementById('liveStats').style.display = 'none';
+  document.getElementById('scoreSection').style.display = 'block';
+  document.getElementById('scoreBig').textContent = mean.toFixed(3);
+  document.getElementById('scoreBig').style.color = grade.color;
+  const gradeEl = document.getElementById('scoreGrade');
+  gradeEl.textContent = grade.text;
+  gradeEl.style.background = grade.bg;
+  gradeEl.style.color = grade.color;
+  const grid = document.getElementById('statsGrid');
+  grid.innerHTML = `
+    <div class="stat-card"><div class="stat-val">${stepCount}</div><div class="stat-lbl">Steps</div></div>
+    <div class="stat-card"><div class="stat-val">${Math.max(...episodeRewards).toFixed(2)}</div><div class="stat-lbl">Best Step</div></div>
+    <div class="stat-card"><div class="stat-val">${Math.min(...episodeRewards).toFixed(2)}</div><div class="stat-lbl">Worst Step</div></div>
+    <div class="stat-card"><div class="stat-val">${((Date.now()-episodeStartTime)/1000).toFixed(0)}s</div><div class="stat-lbl">Time</div></div>`;
+  document.getElementById('doneBanner').style.display = 'flex';
+  document.getElementById('doneScore').textContent = `Final score: ${mean.toFixed(3)} — ${grade.text}`;
+  document.getElementById('actionPanel').style.display = 'none';
+  document.getElementById('lbSaveRow').style.display = 'flex';
+  if (mean >= 0.9) launchConfetti();
+  setStatus(`Done — score: ${mean.toFixed(3)}`);
+}
+
+// ── Timer ──────────────────────────────────────────────────────────────────
+function startTimer() {
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    if (!stepStartTime) return;
+    const s = Math.floor((Date.now() - stepStartTime) / 1000);
+    const badge = document.getElementById('timerBadge');
+    badge.textContent = s + 's';
+    badge.className = 'timer-badge' + (s > 30 ? ' danger' : s > 15 ? ' warning' : '');
+  }, 1000);
+}
+
+// ── Hint ───────────────────────────────────────────────────────────────────
+async function fetchHint() {
+  try {
+    const res = await fetch('/hint');
+    const data = await res.json();
+    const banner = document.getElementById('hintBanner');
+    document.getElementById('hintText').textContent = data.hint;
+    banner.style.display = 'flex';
+    setTimeout(() => { banner.style.display = 'none'; }, 8000);
+  } catch(e) {}
+}
+
+// ── Analytics ──────────────────────────────────────────────────────────────
+async function fetchAnalytics() {
+  try {
+    const res = await fetch('/analytics');
+    const data = await res.json();
+    renderAnalytics('catAnalytics', data.categories, '#7c6aff');
+    renderAnalytics('priAnalytics', data.priorities, '#ff6a9e');
+  } catch(e) {}
+}
+
+function renderAnalytics(elId, data, color) {
+  const el = document.getElementById(elId);
+  if (!data || !Object.keys(data).length) { el.innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:12px;">No data yet</div>'; return; }
+  el.innerHTML = Object.entries(data).map(([k,v]) => {
+    const pct = v.accuracy != null ? Math.round(v.accuracy * 100) : 0;
+    return `<div class="analytics-bar-row">
+      <div class="analytics-cat-label">${k}</div>
+      <div class="analytics-bar-bg"><div class="analytics-bar-fill" style="width:${pct}%;background:${color};"></div></div>
+      <div class="analytics-pct">${pct}%</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Leaderboard ────────────────────────────────────────────────────────────
+async function loadLeaderboard(taskFilter) {
+  const url = taskFilter && taskFilter !== 'all' ? `/leaderboard?task_id=${taskFilter}&limit=20` : '/leaderboard?limit=20';
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    const el = document.getElementById('lbContent');
+    if (!data.entries.length) { el.innerHTML = '<div class="lb-empty">No scores yet. Be the first!</div>'; return; }
+    el.innerHTML = `<table class="lb-table">
+      <thead><tr><th>#</th><th>Name</th><th>Task</th><th>Score</th><th>Grade</th></tr></thead>
+      <tbody>${data.entries.map((e,i) => `
+        <tr>
+          <td style="color:var(--muted)">${i+1}</td>
+          <td>${escHtml(e.name)}</td>
+          <td style="color:var(--muted);font-size:10px;">${e.task_id}</td>
+          <td style="font-family:var(--mono);color:${gradeColor(e.score)}">${e.score.toFixed(3)}</td>
+          <td><span style="font-size:10px;padding:2px 7px;border-radius:4px;background:${gradeLabel(e.score).bg};color:${gradeLabel(e.score).color}">${e.grade}</span></td>
+        </tr>`).join('')}
+      </tbody></table>`;
+  } catch(e) { document.getElementById('lbContent').innerHTML = '<div class="lb-empty">Failed to load</div>'; }
+}
+
+function filterLB(task, btn) {
+  lbFilter = task;
+  document.querySelectorAll('.lb-filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadLeaderboard(task);
+}
+
+async function saveScore() {
+  if (lastScore == null) return;
+  const name = document.getElementById('lbNameInput').value.trim();
+  if (!name) { document.getElementById('lbNameInput').focus(); return; }
+  const grade = gradeLabel(lastScore);
+  document.getElementById('lbSaveBtn').disabled = true;
+  try {
+    await fetch('/leaderboard', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ name, task_id: lastTaskId, score: lastScore, grade: grade.text, steps: stepCount, time_total: (Date.now()-episodeStartTime)/1000 })
+    });
+    document.getElementById('lbSaveRow').style.display = 'none';
+    switchTab('leaderboard', document.querySelectorAll('.panel-tab')[3]);
+    loadLeaderboard(lbFilter);
+  } catch(e) { document.getElementById('lbSaveBtn').disabled = false; }
+}
+
+// ── Tab switching ──────────────────────────────────────────────────────────
+function switchTab(name, btn) {
+  ['rewardsTab','logTab','analyticsTab','leaderboardTab'].forEach(id => {
+    document.getElementById(id).style.display = 'none';
+  });
+  document.querySelectorAll('.panel-tab').forEach(b => b.classList.remove('active'));
+  document.getElementById(name + 'Tab').style.display = 'block';
+  btn.classList.add('active');
+  if (name === 'leaderboard') loadLeaderboard(lbFilter);
+  if (name === 'analytics') fetchAnalytics();
+}
+
+// ── AI Auto-Play ───────────────────────────────────────────────────────────
+const AI_PRIORITIES = ['urgent','high','normal','low'];
+const AI_CATEGORIES = ['support','sales','spam','internal','billing'];
+
+function toggleAIPlay() {
+  if (aiPlaying) { stopAIPlay(); return; }
+  if (!currentObs || episodeDone) {
+    if (!selectedTask) { flashStatus('Select a task first'); return; }
+    startEpisode().then(() => { setTimeout(startAIPlay, 600); });
+    return;
+  }
+  startAIPlay();
+}
+
+function startAIPlay() {
+  aiPlaying = true;
+  document.getElementById('aiPlayBtn').classList.add('active');
+  document.getElementById('aiPlayBtn').textContent = '⏹ Stop AI';
+  document.getElementById('autoplayBar').style.display = 'flex';
+  document.getElementById('submitBtn').disabled = true;
+  aiStep();
+}
+
+function stopAIPlay() {
+  aiPlaying = false;
+  clearTimeout(aiTimeout);
+  document.getElementById('aiPlayBtn').classList.remove('active');
+  document.getElementById('aiPlayBtn').textContent = '🤖 AI Auto-Play';
+  document.getElementById('autoplayBar').style.display = 'none';
+  if (!episodeDone) document.getElementById('submitBtn').disabled = false;
+}
+
+function aiStep() {
+  if (!aiPlaying || episodeDone || !currentObs) { stopAIPlay(); return; }
+  const fields = TASK_META[selectedTask]?.fields || [];
+  document.getElementById('autoplayText').textContent = `AI triaging email ${currentObs.step + 1} of ${currentObs.total_steps}...`;
+
+  // Simulate AI "thinking" delay
+  aiTimeout = setTimeout(async () => {
+    if (!aiPlaying) return;
+    // Simple heuristic AI: pick based on email content keywords
+    const body = (currentObs.email.body + ' ' + currentObs.email.subject).toLowerCase();
+    const sender = currentObs.email.sender.toLowerCase();
+
+    let pri = 'normal', cat = 'support';
+    if (body.includes('urgent') || body.includes('down') || body.includes('vulnerability') || body.includes('sql injection')) pri = 'urgent';
+    else if (body.includes('invoice') || body.includes('overdue') || body.includes('enterprise') || body.includes('200 engineer')) pri = 'high';
+    else if (body.includes('gift card') || body.includes('50% off') || body.includes('prize') || body.includes('click here')) pri = 'low';
+    else if (body.includes('lunch') || body.includes('meeting agenda') || body.includes('thursday')) pri = 'low';
+
+    if (body.includes('gift card') || body.includes('prize') || body.includes('50% off') || body.includes('subscription renewal') || sender.includes('promo') || sender.includes('deals')) cat = 'spam';
+    else if (body.includes('invoice') || body.includes('refund') || body.includes('payment') || body.includes('billing') || body.includes('renewal')) cat = 'billing';
+    else if (body.includes('sales') || body.includes('demo') || body.includes('enterprise plan') || body.includes('engineer')) cat = 'sales';
+    else if (body.includes('meeting') || body.includes('lunch') || body.includes('team') || body.includes('agenda') || sender.includes('company.com') || sender.includes('colleague')) cat = 'internal';
+    else cat = 'support';
+
+    const phish = fields.includes('phishing') && (sender.includes('paypa1') || sender.includes('c0mpany') || sender.includes('trusted-vendor.finance'));
+    const reply = fields.includes('reply') ? (cat === 'spam' ? null : 'Thank you for reaching out. Our team will look into this and get back to you shortly.') : null;
+
+    selPriority = pri; selCategory = cat; isPhishing = phish;
+
+    // Visually highlight selections
+    document.querySelectorAll('#priorityPills .pill').forEach(p => {
+      p.className = 'pill' + (p.textContent.toLowerCase().includes(pri) ? ` sel-${pri}` : '');
+    });
+    document.querySelectorAll('#categoryPills .pill').forEach(p => {
+      p.className = 'pill' + (p.textContent.toLowerCase().includes(cat) ? ` sel-${cat}` : '');
+    });
+    if (reply && document.getElementById('replyInput')) document.getElementById('replyInput').value = reply;
+
+    await submitAction();
+    if (aiPlaying && !episodeDone) {
+      aiTimeout = setTimeout(aiStep, 900);
+    } else {
+      stopAIPlay();
+    }
+  }, 700);
+}
+
+// ── Confetti ───────────────────────────────────────────────────────────────
+function launchConfetti() {
+  const canvas = document.getElementById('confetti-canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+  const pieces = Array.from({length:120}, () => ({
+    x: Math.random() * canvas.width, y: -10,
+    vx: (Math.random()-0.5)*4, vy: Math.random()*4+2,
+    color: ['#7c6aff','#ff6a9e','#6affcb','#ff9f43','#54a0ff'][Math.floor(Math.random()*5)],
+    size: Math.random()*6+3, rot: Math.random()*360, vr: (Math.random()-0.5)*6,
+  }));
+  let frame = 0;
+  function draw() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    pieces.forEach(p => {
+      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot*Math.PI/180);
+      ctx.fillStyle = p.color; ctx.fillRect(-p.size/2,-p.size/2,p.size,p.size);
+      ctx.restore();
+      p.x += p.vx; p.y += p.vy; p.rot += p.vr; p.vy += 0.05;
+    });
+    frame++;
+    if (frame < 180) requestAnimationFrame(draw);
+    else ctx.clearRect(0,0,canvas.width,canvas.height);
+  }
+  draw();
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+loadLeaderboard('all');
+</script>
+</body>
+</html>

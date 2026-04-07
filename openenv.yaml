@@ -1,0 +1,36 @@
+name: email-triage-env
+version: "1.0.0"
+description: >
+  A real-world email triage environment where an AI agent must read incoming
+  emails and decide how to prioritize, categorize, and respond to them.
+tags:
+  - openenv
+  - email
+  - triage
+  - real-world
+observation_space:
+  type: object
+  description: Current email in inbox with metadata
+action_space:
+  type: object
+  description: >
+    Agent action: assign priority (urgent/high/normal/low),
+    assign category (support/sales/spam/internal/billing),
+    and optionally draft a reply.
+tasks:
+  - id: easy
+    name: Priority Classification
+    description: Correctly assign priority labels to 5 emails
+    difficulty: easy
+    max_steps: 10
+  - id: medium
+    name: Category + Priority
+    description: Correctly assign both category and priority to 8 emails
+    difficulty: medium
+    max_steps: 20
+  - id: hard
+    name: Full Triage with Reply
+    description: Assign category, priority, and draft an appropriate reply for 10 emails
+    difficulty: hard
+    max_steps: 30
+reward_range: [0.0, 1.0]
