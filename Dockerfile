@@ -14,4 +14,4 @@ EXPOSE 7860
 
 # Default: start the FastAPI server (HF Space deployment)
 # Override CMD to run inference or validate instead
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "7860"]

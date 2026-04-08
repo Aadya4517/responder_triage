@@ -16,10 +16,10 @@ dependencies = [
 
 [project.scripts]
 openenv = "openenv_cli:cli"
-server = "server:app"
+server = "server:main"
 
 [tool.setuptools]
-py-modules = ["openenv_cli", "inference", "server", "validate_openenv"]
+py-modules = ["openenv_cli", "inference", "validate_openenv"]
 
 [tool.setuptools.packages.find]
-include = ["env*"]
+include = ["env*", "server*"]
