@@ -121,6 +121,8 @@ class ResetRequest(BaseModel):
     task_id: str = "easy"
     session_id: Optional[str] = None
 
+    model_config = {"extra": "ignore"}
+
 class StepRequest(BaseModel):
     severity: str
     incident_type: str
@@ -161,7 +163,9 @@ def index():
     return FileResponse(os.path.join("static", "index.html"))
 
 @app.post("/reset")
-def reset(req: ResetRequest):
+def reset(req: Optional[ResetRequest] = None):
+    if req is None:
+        req = ResetRequest()
     global _streak, _last_result, _timeline, _session_start, _current_task_id
     sid = req.session_id or _default_session
 
