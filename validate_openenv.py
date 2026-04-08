@@ -1,14 +1,14 @@
 """
 openenv validate — smoke-tests all tasks against the OpenEnv spec.
 """
-from env import EmailTriageEnv
+from env import IncidentResponseEnv
 from env.models import Action
 from env.dataset import TASK_CONFIGS
 
 
 def validate():
     print("Running openenv validate...\n")
-    env = EmailTriageEnv()
+    env = IncidentResponseEnv()
     all_passed = True
 
     for task_id in TASK_CONFIGS:
@@ -21,24 +21,26 @@ def validate():
             steps = 0
             while not done:
                 action = Action(
-                    priority="high",
-                    category="support",
-                    reply="Thank you for reaching out. Our team is investigating.",
-                    is_phishing=False,
+                    severity="P2",
+                    incident_type="application",
+                    team="backend",
+                    status_update="Investigating the incident. Team notified.",
+                    is_false_positive=False,
                 )
                 next_obs, reward, done, info = env.step(action)
                 assert 0.0 <= reward.value <= 1.0, f"reward out of range: {reward.value}"
                 steps += 1
-                obs = next_obs
+                if not done:
+                    obs = next_obs
 
             state = env.state()
             assert state["done"] is True
             assert 0.0 <= state["mean_reward"] <= 1.0
 
-            print(f"  [PASS] task={task_id:<20} steps={steps} mean_reward={state['mean_reward']:.4f}")
+            print(f"  [PASS] task={task_id:<25} steps={steps} mean_reward={state['mean_reward']:.4f}")
 
         except Exception as exc:
-            print(f"  [FAIL] task={task_id:<20} error={exc}")
+            print(f"  [FAIL] task={task_id:<25} error={exc}")
             all_passed = False
 
     print()

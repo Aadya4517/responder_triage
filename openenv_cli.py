@@ -1,15 +1,15 @@
 """
 CLI entrypoint: `openenv validate`
-Runs the full spec compliance check across all 3 tasks.
+Runs the full spec compliance check across all 3 core tasks.
 """
 import sys
-from env import EmailTriageEnv
+from env import IncidentResponseEnv
 from env.models import Action
 
 
 def validate():
     print("Running openenv validate...\n")
-    env = EmailTriageEnv()
+    env = IncidentResponseEnv()
     all_passed = True
 
     for task_id in ("easy", "medium", "hard"):
@@ -25,16 +25,17 @@ def validate():
 
             while not done:
                 assert obs is not None, "observation is None mid-episode"
-                assert obs.email is not None, "observation missing email"
+                assert obs.alert is not None, "observation missing alert"
                 action = Action(
-                    priority="high",
-                    category="support",
-                    reply="Thank you for reaching out. Our team is on it.",
+                    severity="P2",
+                    incident_type="application",
+                    team="backend",
+                    status_update="Investigating the incident. Team has been notified and is working on a fix.",
                 )
                 next_obs, reward, done, info = env.step(action)
                 assert 0.0 <= reward.value <= 1.0, f"reward out of range: {reward.value}"
                 assert isinstance(done, bool), "done must be bool"
-                assert "email_id" in info, "info missing email_id"
+                assert "alert_id" in info, "info missing alert_id"
                 all_rewards.append(reward.value)
                 steps += 1
                 if not done:

@@ -26,8 +26,8 @@ Rules:
   - Each task score in [0, 1].
 
 Example:
-  [START] task=easy env=email-triage-env model=Qwen/Qwen2.5-72B-Instruct
-  [STEP] step=1 action={"priority":"urgent","category":"support"} reward=1.00 done=false error=null
+  [START] task=easy env=incident-response-env model=Qwen/Qwen2.5-72B-Instruct
+  [STEP] step=1 action={"severity":"P1","team":"database"} reward=1.00 done=false error=null
   [END] success=true steps=5 score=0.900 rewards=1.00,0.50,1.00,1.00,1.00
 """
 
@@ -38,44 +38,42 @@ from typing import List, Optional
 
 from openai import OpenAI
 
-from env import EmailTriageEnv
+from env import IncidentResponseEnv
 from env.models import Action
 
 # ---------------------------------------------------------------------------
-# Config — read from environment
+# Config
 # ---------------------------------------------------------------------------
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY", "")
+API_KEY      = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY", "")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-BENCHMARK = os.getenv("EMAIL_TRIAGE_BENCHMARK", "email-triage-env")
-TEMPERATURE = 0.0
-MAX_TOKENS = 256
+MODEL_NAME   = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+BENCHMARK    = os.getenv("INCIDENT_RESPONSE_BENCHMARK", "incident-response-env")
+TEMPERATURE  = 0.0
+MAX_TOKENS   = 300
 SUCCESS_SCORE_THRESHOLD = 0.6
 
 SYSTEM_PROMPT = textwrap.dedent("""
-    You are an expert email triage assistant.
-    Each turn you receive an email and must respond with a JSON object:
+    You are an expert SRE (Site Reliability Engineer) performing incident triage.
+    Each turn you receive a system alert and must respond with a JSON object:
     {
-      "priority": one of "urgent", "high", "normal", "low",
-      "category": one of "support", "sales", "spam", "internal", "billing",
-      "reply": a short professional reply (2-3 sentences), or null if spam
+      "severity": one of "P1", "P2", "P3", "P4",
+      "incident_type": one of "database", "network", "security", "application", "infrastructure",
+      "team": one of "backend", "infra", "security", "database", "frontend",
+      "status_update": a brief 1-2 sentence status update for stakeholders, or null if P4
     }
+    Severity guide: P1=critical/revenue impact, P2=major degradation, P3=minor issue, P4=informational.
     Respond ONLY with valid JSON. No explanation, no markdown.
 """).strip()
 
 
 # ---------------------------------------------------------------------------
-# Logging helpers — strict stdout format
+# Logging helpers
 # ---------------------------------------------------------------------------
-def log_start(task: str, env: str, model: str) -> None:
-    print(f"[START] task={task} env={env} model={model}", flush=True)
-
+def log_start(task: str, model: str) -> None:
+    print(f"[START] task={task} env={BENCHMARK} model={model}", flush=True)
 
 def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
-    error_val = error if error else "null"
-    done_val = str(done).lower()
-    print(f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}", flush=True)
-
+    print(f"[STEP] step={step} action={action} reward={reward:.2f} done={str(done).lower()} error={error or 'null'}", flush=True)
 
 def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
@@ -86,13 +84,15 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> No
 # LLM call
 # ---------------------------------------------------------------------------
 def get_model_action(client: OpenAI, obs) -> tuple[Action, str]:
-    """Returns (Action, raw_action_str). Falls back to defaults on parse error."""
-    email = obs.email
+    alert = obs.alert
     user_prompt = (
-        f"Subject: {email.subject}\n"
-        f"From: {email.sender}\n"
-        f"Body: {email.body}"
+        f"Source: {alert.source}\n"
+        f"Title: {alert.title}\n"
+        f"Alert: {alert.body}"
     )
+    if obs.cascading_context:
+        user_prompt += f"\nContext: {obs.cascading_context}"
+
     try:
         completion = client.chat.completions.create(
             model=MODEL_NAME,
@@ -107,28 +107,29 @@ def get_model_action(client: OpenAI, obs) -> tuple[Action, str]:
         text = (completion.choices[0].message.content or "").strip()
         data = json.loads(text)
         action = Action(
-            priority=data.get("priority", "normal"),
-            category=data.get("category", "support"),
-            reply=data.get("reply"),
+            severity=data.get("severity", "P3"),
+            incident_type=data.get("incident_type", "application"),
+            team=data.get("team", "backend"),
+            status_update=data.get("status_update"),
         )
-        action_str = json.dumps({"priority": action.priority, "category": action.category})
+        action_str = json.dumps({"severity": action.severity, "team": action.team})
         return action, action_str
     except Exception:
-        fallback = Action(priority="normal", category="support", reply=None)
-        return fallback, '{"priority":"normal","category":"support"}'
+        fallback = Action(severity="P3", incident_type="application", team="backend")
+        return fallback, '{"severity":"P3","team":"backend"}'
 
 
 # ---------------------------------------------------------------------------
 # Run one task
 # ---------------------------------------------------------------------------
 def run_task(client: OpenAI, task_id: str) -> float:
-    env = EmailTriageEnv()
+    env = IncidentResponseEnv()
     rewards: List[float] = []
     steps_taken = 0
     score = 0.0
     success = False
 
-    log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
+    log_start(task=task_id, model=MODEL_NAME)
 
     try:
         obs = env.reset(task_id)

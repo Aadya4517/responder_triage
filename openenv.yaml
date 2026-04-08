@@ -1,36 +1,39 @@
-name: email-triage-env
+name: incident-response-env
 version: "1.0.0"
 description: >
-  A real-world email triage environment where an AI agent must read incoming
-  emails and decide how to prioritize, categorize, and respond to them.
+  A real-world incident response environment where an AI agent reads system
+  alerts and must classify severity, route to the correct on-call team,
+  and draft status updates — simulating the daily work of an SRE/DevOps engineer.
 tags:
   - openenv
-  - email
-  - triage
+  - incident-response
+  - sre
+  - devops
   - real-world
 observation_space:
   type: object
-  description: Current email in inbox with metadata
+  description: Current system alert with source, title, body, and metadata
 action_space:
   type: object
   description: >
-    Agent action: assign priority (urgent/high/normal/low),
-    assign category (support/sales/spam/internal/billing),
-    and optionally draft a reply.
+    Agent action: assign severity (P1/P2/P3/P4),
+    classify incident type (database/network/security/application/infrastructure),
+    route to on-call team (backend/infra/security/database/frontend),
+    and optionally draft a status update.
 tasks:
   - id: easy
-    name: Priority Classification
-    description: Correctly assign priority labels to 5 emails
+    name: Severity Classification
+    description: Classify incident severity (P1-P4) for 5 alerts
     difficulty: easy
     max_steps: 10
   - id: medium
-    name: Category + Priority
-    description: Correctly assign both category and priority to 8 emails
+    name: Severity + Team Routing
+    description: Classify severity and route to correct on-call team for 8 alerts
     difficulty: medium
     max_steps: 20
   - id: hard
-    name: Full Triage with Reply
-    description: Assign category, priority, and draft an appropriate reply for 10 emails
+    name: Full Incident Triage
+    description: Severity + team routing + draft status update for 10 alerts
     difficulty: hard
     max_steps: 30
 reward_range: [0.0, 1.0]
