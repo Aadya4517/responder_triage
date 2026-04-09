@@ -6,6 +6,7 @@ Endpoints:
   GET  /                  frontend UI
   POST /reset             reset(task_id, session_id?) -> Observation
   POST /step              step(action, session_id?)   -> {observation, reward, done, info}
+  POST /step/confident    step with confidence score  -> calibration tracking
   GET  /state             state()        -> dict
   GET  /health            200 OK
   GET  /hint              hint for current alert
@@ -20,6 +21,13 @@ Endpoints:
   GET  /leaderboard       get scores
   POST /leaderboard       save score
   GET  /analytics         accuracy stats
+  GET  /autopsy           post-mortem: what went wrong and why (unique)
+  GET  /heatmap           confusion matrix for severity + team routing (unique)
+  GET  /compare           side-by-side session comparison (unique)
+  GET  /skills            agent skill profile by source/severity/type (unique)
+  GET  /calibration       confidence vs accuracy calibration report (unique)
+  GET  /simulate/storm    cascading incident storm scenario (unique)
+  GET  /feed              SSE live alert stream like PagerDuty (unique)
 """
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
@@ -572,10 +580,215 @@ def analytics():
     return {"teams": team_data, "severities": sev_data}
 
 
+# ── /autopsy ──────────────────────────────────────────────────────────────
+@app.get("/autopsy")
+def autopsy(session_id: Optional[str] = None):
+    """Post-mortem: for every wrong step, explain what went wrong and how to fix it."""
+    sid = session_id or _default_session
+    tl = _get_session(sid)["timeline"] if session_id else _timeline
+    if not tl:
+        return {"message": "No episode data. Run an episode first."}
+    mistakes, perfect = [], []
+    for entry in tl:
+        rv, act, exp, bd = entry["reward"], entry["action"], entry["expected"], entry["breakdown"]
+        alert = ALL_ALERT_MAP.get(entry["alert_id"], {})
+        diff = _DIFFICULTY.get(entry["alert_id"], {})
+        if rv >= 0.99:
+            perfect.append({"alert_id": entry["alert_id"], "title": entry["alert_title"]}); continue
+        reasons, suggestions = [], []
+        if bd.get("severity", 1.0) < 1.0:
+            got, want = act["severity"], exp["severity"]
+            reasons.append(f"Severity {'off by one' if bd['severity']==0.5 else 'wrong'}: chose {got}, expected {want}")
+            sev_guide = {"P1":"revenue impact/total outage","P2":"major degradation","P3":"minor issue","P4":"informational"}
+            suggestions.append(f"{want} = {sev_guide.get(want,'')}")
+        if bd.get("team", 1.0) < 1.0:
+            got, want = act["team"], exp["team"]
+            reasons.append(f"Wrong team: routed to {got}, should be {want}")
+            team_guide = {"database":"DB errors, pools, replication","backend":"app errors, payment, API",
+                          "infra":"certs, disk, load balancers","security":"auth failures, login spikes","frontend":"CDN, cache, UI"}
+            suggestions.append(f"{want} handles: {team_guide.get(want,'')}")
+        if bd.get("incident_type", 1.0) < 1.0:
+            reasons.append(f"Wrong type: chose {act['incident_type']}, expected {exp['incident_type']}")
+        if bd.get("status_update", 1.0) < 0.8:
+            kws = alert.get("status_keywords", [])
+            reasons.append(f"Status update weak ({bd.get('status_update',0):.2f}) — missing: {kws}")
+            suggestions.append(f"Include: {', '.join(kws)}")
+        if bd.get("false_positive", 1.0) < 1.0:
+            if alert.get("is_false_positive"):
+                reasons.append("Missed false positive — look for 'scheduled','expected','authorized' in body")
+            else:
+                reasons.append("Incorrectly flagged as false positive — this was real")
+        mistakes.append({"step": entry["step"], "alert_id": entry["alert_id"], "title": entry["alert_title"],
+                         "reward": rv, "difficulty": diff.get("score"), "difficulty_reason": diff.get("reason"),
+                         "what_went_wrong": reasons, "how_to_fix": suggestions})
+    mean = round(sum(e["reward"] for e in tl) / len(tl), 4)
+    grade_letter = "S" if mean>=0.95 else "A" if mean>=0.8 else "B" if mean>=0.65 else "C" if mean>=0.5 else "D"
+    return {"grade": grade_letter, "mean_reward": mean, "total_steps": len(tl),
+            "perfect_steps": len(perfect), "mistake_steps": len(mistakes),
+            "perfect": perfect, "mistakes": mistakes,
+            "verdict": {"S":"Excellent — near-perfect.","A":"Strong with minor gaps.","B":"Decent but missing signals.",
+                        "C":"Needs improvement.","D":"Significant gaps — study alert patterns."}.get(grade_letter)}
+
+
+# ── /heatmap — confusion matrix ───────────────────────────────────────────
+@app.get("/heatmap")
+def heatmap(session_id: Optional[str] = None):
+    """Confusion matrix: severity and team routing mistakes visualized."""
+    sid = session_id or _default_session
+    tl = _get_session(sid)["timeline"] if session_id else _timeline
+    if not tl:
+        return {"message": "No episode data."}
+    SEVS = ["P1","P2","P3","P4"]
+    TEAMS = ["backend","infra","security","database","frontend"]
+    sev_m = {s: {t: 0 for t in SEVS} for s in SEVS}
+    team_m = {t: {u: 0 for u in TEAMS} for t in TEAMS}
+    for e in tl:
+        es, as_ = e["expected"].get("severity"), e["action"].get("severity")
+        et, at = e["expected"].get("team"), e["action"].get("team")
+        if es in sev_m and as_ in sev_m: sev_m[es][as_] += 1
+        if et in team_m and at in team_m: team_m[et][at] += 1
+    biases = sorted([{"expected":e,"predicted":p,"count":c} for e,row in sev_m.items()
+                     for p,c in row.items() if c>0 and e!=p], key=lambda x: x["count"], reverse=True)
+    return {"severity_confusion": sev_m, "team_confusion": team_m,
+            "top_severity_mistakes": biases[:5], "note": "Rows=expected, Columns=predicted. Diagonal=correct."}
+
+
+# ── /compare — side-by-side session comparison ────────────────────────────
+@app.get("/compare")
+def compare(session_a: str, session_b: str):
+    """Compare two sessions side-by-side — human vs AI, or two model runs."""
+    missing = [s for s in [session_a, session_b] if s not in _sessions]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"Sessions not found: {missing}")
+    tl_a = {e["alert_id"]: e for e in _sessions[session_a]["timeline"]}
+    tl_b = {e["alert_id"]: e for e in _sessions[session_b]["timeline"]}
+    common = set(tl_a) & set(tl_b)
+    diffs = sorted([{"alert_id": aid, "title": tl_a[aid]["alert_title"],
+                     "session_a": tl_a[aid]["reward"], "session_b": tl_b[aid]["reward"],
+                     "delta": round(tl_a[aid]["reward"] - tl_b[aid]["reward"], 4),
+                     "winner": "A" if tl_a[aid]["reward"] > tl_b[aid]["reward"] else
+                               "B" if tl_b[aid]["reward"] > tl_a[aid]["reward"] else "tie"}
+                    for aid in common], key=lambda x: abs(x["delta"]), reverse=True)
+    ma = round(sum(e["reward"] for e in _sessions[session_a]["timeline"]) / len(_sessions[session_a]["timeline"]), 4)
+    mb = round(sum(e["reward"] for e in _sessions[session_b]["timeline"]) / len(_sessions[session_b]["timeline"]), 4)
+    return {"session_a": session_a, "session_b": session_b, "mean_a": ma, "mean_b": mb,
+            "winner": "A" if ma > mb else "B" if mb > ma else "tie",
+            "margin": round(abs(ma - mb), 4), "per_alert": diffs}
+
+
+# ── /skills — agent skill profile ────────────────────────────────────────
+@app.get("/skills")
+def skills(session_id: Optional[str] = None):
+    """Skill profile: strengths and weaknesses by alert source, severity, and type."""
+    sid = session_id or _default_session
+    tl = _get_session(sid)["timeline"] if session_id else _timeline
+    if not tl:
+        return {"message": "No episode data."}
+    by_src, by_sev, by_type = {}, {}, {}
+    for entry in tl:
+        alert = ALL_ALERT_MAP.get(entry["alert_id"], {})
+        for bucket, key in [(by_src, alert.get("source","?")),
+                            (by_sev, alert.get("expected_severity","?")),
+                            (by_type, alert.get("expected_type","?"))]:
+            bucket.setdefault(key, []).append(entry["reward"])
+    def summarize(d):
+        return {k: {"count": len(v), "mean": round(sum(v)/len(v),3),
+                    "rating": "strong" if sum(v)/len(v)>=0.85 else "weak" if sum(v)/len(v)<0.5 else "average"}
+                for k, v in d.items()}
+    all_s = {**summarize(by_src), **summarize(by_sev), **summarize(by_type)}
+    return {"by_source": summarize(by_src), "by_severity": summarize(by_sev), "by_type": summarize(by_type),
+            "strengths": [k for k,v in all_s.items() if v["rating"]=="strong"],
+            "weaknesses": [k for k,v in all_s.items() if v["rating"]=="weak"]}
+
+
+# ── /calibration — confidence vs accuracy ────────────────────────────────
+_confidence_log: list = []
+
+class ConfidentStepRequest(BaseModel):
+    severity: str
+    incident_type: str
+    team: str
+    confidence: float
+    status_update: Optional[str] = None
+    is_false_positive: Optional[bool] = None
+    session_id: Optional[str] = None
+
+@app.post("/step/confident")
+def step_confident(req: ConfidentStepRequest):
+    """Like /step but accepts a confidence score (0-1). Tracks calibration."""
+    sid = req.session_id or _default_session
+    sess = _get_session(sid)
+    action = Action(severity=req.severity, incident_type=req.incident_type, team=req.team,
+                    status_update=req.status_update, is_false_positive=req.is_false_positive)
+    next_obs, reward, done, info = sess["env"].step(action)
+    _confidence_log.append({"confidence": req.confidence, "reward": reward.value,
+                             "correct": reward.value >= 0.99, "alert_id": info["alert_id"]})
+    return {"observation": next_obs.model_dump() if next_obs else None,
+            "reward": reward.model_dump(), "done": done, "info": info}
+
+@app.get("/calibration")
+def calibration():
+    """Are high-confidence decisions actually more accurate? Calibration report."""
+    if not _confidence_log:
+        return {"message": "No confident steps yet. Use POST /step/confident"}
+    buckets = {"low (0-0.4)": [], "medium (0.4-0.7)": [], "high (0.7-1.0)": []}
+    for e in _confidence_log:
+        b = "low (0-0.4)" if e["confidence"]<0.4 else "high (0.7-1.0)" if e["confidence"]>=0.7 else "medium (0.4-0.7)"
+        buckets[b].append(e["reward"])
+    result = {b: {"count": len(v), "mean_reward": round(sum(v)/len(v),3) if v else None} for b,v in buckets.items()}
+    hi = result["high (0.7-1.0)"]["mean_reward"]
+    overconfident = hi is not None and hi < 0.6 and result["high (0.7-1.0)"]["count"] >= 3
+    return {"buckets": result, "total_steps": len(_confidence_log),
+            "verdict": "Overconfident — high confidence but low accuracy." if overconfident else "Well calibrated."}
+
+
+# ── /simulate/storm — cascading incident storm ────────────────────────────
+@app.get("/simulate/storm")
+def simulate_storm():
+    """
+    Returns a synthetic cascading incident storm scenario — 3 correlated alerts
+    that fired simultaneously. Tests how well an agent handles correlated failures.
+    """
+    return {
+        "description": "Cascading incident storm — 3 correlated alerts fired simultaneously",
+        "context": "DB outage → payment failures → auth retry storm",
+        "alerts": [
+            {"id": "storm_001", "title": "CRITICAL: Primary DB connection pool exhausted",
+             "source": "PagerDuty", "body": "prod-db-primary: all 500 connections used. API latency spiking. Revenue impact starting.",
+             "expected_severity": "P1", "expected_type": "database", "expected_team": "database"},
+            {"id": "storm_002", "title": "CRITICAL: Payment service cascading failure",
+             "source": "Datadog", "body": "checkout-service 503s — downstream of DB outage. $2,400/min revenue loss.",
+             "expected_severity": "P1", "expected_type": "application", "expected_team": "backend"},
+            {"id": "storm_003", "title": "WARNING: Auth service CPU 98% — retry storm",
+             "source": "CloudWatch", "body": "auth-service CPU 98%. Retry storms from payment failures flooding auth endpoints.",
+             "expected_severity": "P2", "expected_type": "application", "expected_team": "backend"},
+        ],
+        "tip": "Root cause is storm_001. storm_002 and storm_003 are downstream effects.",
+        "scoring": "Use POST /reset + POST /step to score your triage decisions.",
+    }
+
+
+# ── /feed — SSE live alert stream ─────────────────────────────────────────
+from fastapi.responses import StreamingResponse
+import asyncio
+
+@app.get("/feed")
+async def alert_feed(task_id: str = "medium"):
+    """SSE stream — delivers alerts one-by-one with 2s delays, like a real PagerDuty feed."""
+    async def generate():
+        cfg = TASK_CONFIGS.get(task_id, TASK_CONFIGS["medium"])
+        ids = cfg["alert_ids"]
+        yield f"data: {json.dumps({'type':'start','task':task_id,'total':len(ids)})}\n\n"
+        for i, aid in enumerate(ids):
+            await asyncio.sleep(2)
+            a = ALL_ALERT_MAP.get(aid, {})
+            yield f"data: {json.dumps({'type':'alert','index':i,'id':aid,'title':a.get('title',''),'source':a.get('source',''),'body':a.get('body',''),'timestamp':a.get('timestamp','')})}\n\n"
+        yield f"data: {json.dumps({'type':'end','total_sent':len(ids)})}\n\n"
+    return StreamingResponse(generate(), media_type="text/event-stream",
+                             headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
+
+
 def main():
-    """Entry point for multi-mode deployment."""
-    import uvicorn, os
-    uvicorn.run("server.app:app", host="0.0.0.0", port=int(os.getenv("PORT", "7860")))
 
 if __name__ == "__main__":
     main()
