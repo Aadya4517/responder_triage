@@ -1261,6 +1261,297 @@ def severity_drift(session_id: Optional[str] = None):
     }
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# CHALLENGE 1: BLACKOUT MODE — only title + source visible, body hidden
+# ══════════════════════════════════════════════════════════════════════════════
+
+class BlackoutResetRequest(BaseModel):
+    task_id: str = "medium"
+    session_id: Optional[str] = None
+
+@app.post("/blackout/reset")
+def blackout_reset(req: Optional[BlackoutResetRequest] = None):
+    """
+    Blackout Mode: alert body is hidden. You only see title + source.
+    Forces triage on minimal info — like a real 3am pager alert.
+    """
+    if req is None:
+        req = BlackoutResetRequest()
+    sid = req.session_id or ("blackout_" + str(int(time.time())))
+    sess = _get_session(sid)
+    sess["streak"] = 0; sess["last_result"] = {}; sess["timeline"] = []
+    sess["start"] = time.time(); sess["task_id"] = req.task_id
+    sess["analytics"] = defaultdict(lambda: {"correct": 0, "total": 0})
+    sess["sev_analytics"] = defaultdict(lambda: {"correct": 0, "total": 0})
+    obs = sess["env"].reset(req.task_id)
+    result = obs.model_dump()
+    # BLACKOUT: replace body with redacted message
+    result["alert"]["body"] = "🔴 BLACKOUT MODE — Alert body hidden. Triage on title and source only."
+    result["session_id"] = sid
+    result["mode"] = "blackout"
+    result["total_steps"] = len(sess["env"]._alert_ids)
+    return result
+
+@app.post("/blackout/step")
+def blackout_step(req: StepRequest):
+    """Step in blackout mode — same scoring, body was hidden."""
+    sid = req.session_id or _default_session
+    sess = _get_session(sid)
+    try:
+        action = Action(severity=req.severity, incident_type=req.incident_type,
+                        team=req.team, status_update=req.status_update,
+                        is_false_positive=req.is_false_positive)
+        next_obs, reward, done, info = sess["env"].step(action)
+        result = {
+            "observation": None,
+            "reward": reward.model_dump(),
+            "done": done, "info": info,
+            "streak": sess["streak"],
+            "session_id": sid, "mode": "blackout",
+        }
+        if next_obs:
+            obs_dict = next_obs.model_dump()
+            obs_dict["alert"]["body"] = "🔴 BLACKOUT MODE — Alert body hidden."
+            result["observation"] = obs_dict
+        # Update streak
+        if reward.value >= 0.99:
+            sess["streak"] += 1; sess["best_streak"] = max(sess.get("best_streak",0), sess["streak"])
+        else:
+            sess["streak"] = 0
+        result["streak"] = sess["streak"]
+        return result
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CHALLENGE 2: BLITZ MODE — 10 alerts, 60 seconds, score × speed multiplier
+# ══════════════════════════════════════════════════════════════════════════════
+
+_blitz_sessions: dict = {}  # session_id -> {start_time, deadline, steps, rewards}
+
+class BlitzResetRequest(BaseModel):
+    task_id: str = "hard"
+    session_id: Optional[str] = None
+    time_limit_s: int = 60
+
+@app.post("/blitz/reset")
+def blitz_reset(req: Optional[BlitzResetRequest] = None):
+    """
+    Blitz Mode: 10 alerts, 60 seconds total. No hints, no AI.
+    Final score = mean_reward × speed_multiplier.
+    Speed multiplier: finish in <30s = 2x, <45s = 1.5x, <60s = 1x, overtime = 0.5x.
+    """
+    if req is None:
+        req = BlitzResetRequest()
+    sid = req.session_id or ("blitz_" + str(int(time.time())))
+    sess = _get_session(sid)
+    sess["streak"] = 0; sess["last_result"] = {}; sess["timeline"] = []
+    sess["start"] = time.time(); sess["task_id"] = req.task_id
+    sess["analytics"] = defaultdict(lambda: {"correct": 0, "total": 0})
+    sess["sev_analytics"] = defaultdict(lambda: {"correct": 0, "total": 0})
+    obs = sess["env"].reset(req.task_id)
+
+    deadline = time.time() + req.time_limit_s
+    _blitz_sessions[sid] = {
+        "start": time.time(),
+        "deadline": deadline,
+        "time_limit_s": req.time_limit_s,
+        "rewards": [],
+        "steps": 0,
+    }
+
+    result = obs.model_dump()
+    result["session_id"] = sid
+    result["mode"] = "blitz"
+    result["time_limit_s"] = req.time_limit_s
+    result["deadline_unix"] = deadline
+    result["total_steps"] = len(sess["env"]._alert_ids)
+    return result
+
+@app.post("/blitz/step")
+def blitz_step(req: StepRequest):
+    """Step in blitz mode — checks time limit, applies speed multiplier at end."""
+    sid = req.session_id or _default_session
+    blitz = _blitz_sessions.get(sid)
+    if not blitz:
+        raise HTTPException(status_code=400, detail="No blitz session found. Call /blitz/reset first.")
+
+    now = time.time()
+    time_remaining = max(0, blitz["deadline"] - now)
+    overtime = now > blitz["deadline"]
+
+    sess = _get_session(sid)
+    try:
+        action = Action(severity=req.severity, incident_type=req.incident_type,
+                        team=req.team, status_update=req.status_update,
+                        is_false_positive=req.is_false_positive)
+        next_obs, reward, done, info = sess["env"].step(action)
+        blitz["rewards"].append(reward.value)
+        blitz["steps"] += 1
+
+        # Update streak
+        if reward.value >= 0.99:
+            sess["streak"] += 1; sess["best_streak"] = max(sess.get("best_streak",0), sess["streak"])
+        else:
+            sess["streak"] = 0
+
+        result = {
+            "observation": next_obs.model_dump() if next_obs else None,
+            "reward": reward.model_dump(),
+            "done": done or overtime,
+            "info": info,
+            "streak": sess["streak"],
+            "session_id": sid,
+            "mode": "blitz",
+            "time_remaining_s": round(time_remaining, 1),
+            "overtime": overtime,
+        }
+
+        if done or overtime:
+            elapsed = now - blitz["start"]
+            mean_r = sum(blitz["rewards"]) / len(blitz["rewards"]) if blitz["rewards"] else 0
+            if elapsed < 30: mult = 2.0
+            elif elapsed < 45: mult = 1.5
+            elif elapsed < 60: mult = 1.0
+            else: mult = 0.5
+            final = round(min(1.0, mean_r * mult), 4)
+            result["blitz_summary"] = {
+                "elapsed_s": round(elapsed, 1),
+                "mean_reward": round(mean_r, 4),
+                "speed_multiplier": mult,
+                "final_score": final,
+                "steps_completed": blitz["steps"],
+                "verdict": (
+                    "🏆 Legendary!" if final >= 1.8 else
+                    "⚡ Blazing fast!" if final >= 1.4 else
+                    "✅ Solid run" if final >= 0.8 else
+                    "📈 Keep practicing"
+                ),
+            }
+        return result
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/blitz/status")
+def blitz_status(session_id: str):
+    """Check time remaining in a blitz session."""
+    blitz = _blitz_sessions.get(session_id)
+    if not blitz:
+        raise HTTPException(status_code=404, detail="No blitz session found.")
+    remaining = max(0, blitz["deadline"] - time.time())
+    return {
+        "time_remaining_s": round(remaining, 1),
+        "overtime": remaining == 0,
+        "steps": blitz["steps"],
+        "elapsed_s": round(time.time() - blitz["start"], 1),
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CHALLENGE 3: REDACTED MODE — key words blacked out like classified docs
+# ══════════════════════════════════════════════════════════════════════════════
+
+import re as _re
+
+# Words that give away the answer — redact these
+_REDACT_PATTERNS = [
+    # Severity giveaways
+    r'\bP1\b', r'\bP2\b', r'\bP3\b', r'\bP4\b',
+    r'\bcritical\b', r'\bwarning\b', r'\binfo\b', r'\bnotice\b',
+    # Team giveaways
+    r'\bdatabase\b', r'\bdb\b', r'\bbackend\b', r'\binfra\b',
+    r'\bsecurity\b', r'\bfrontend\b',
+    # Severity signal words
+    r'\brevenue\b', r'\boutage\b', r'\bdown\b', r'\bfailing\b',
+    r'\bscheduled\b', r'\bplanned\b', r'\bmaintenance\b',
+    r'\bcredential\b', r'\battack\b', r'\bbrute\b',
+    r'\bcertificate\b', r'\bssl\b', r'\bcert\b',
+    r'\bpayment\b', r'\bcheckout\b',
+]
+
+def _redact_text(text: str, redact_pct: float = 0.4) -> str:
+    """Redact key words from alert text. redact_pct controls how aggressive."""
+    words = text.split()
+    result = []
+    for word in words:
+        clean = _re.sub(r'[^a-zA-Z]', '', word).lower()
+        should_redact = any(_re.search(p, clean, _re.IGNORECASE) for p in _REDACT_PATTERNS)
+        # Also randomly redact some non-key words for extra difficulty
+        import random
+        if should_redact or (random.random() < redact_pct * 0.3 and len(clean) > 4):
+            result.append('█' * len(word))
+        else:
+            result.append(word)
+    return ' '.join(result)
+
+class RedactedResetRequest(BaseModel):
+    task_id: str = "medium"
+    session_id: Optional[str] = None
+    redact_level: float = 0.5  # 0.0 = light, 1.0 = maximum redaction
+
+@app.post("/redacted/reset")
+def redacted_reset(req: Optional[RedactedResetRequest] = None):
+    """
+    Redacted Mode: key words in alert body are blacked out (████).
+    Like reading a classified incident report. Tests real-world ambiguity.
+    redact_level: 0.3=light, 0.5=medium, 0.8=brutal
+    """
+    if req is None:
+        req = RedactedResetRequest()
+    sid = req.session_id or ("redacted_" + str(int(time.time())))
+    sess = _get_session(sid)
+    sess["streak"] = 0; sess["last_result"] = {}; sess["timeline"] = []
+    sess["start"] = time.time(); sess["task_id"] = req.task_id
+    sess["analytics"] = defaultdict(lambda: {"correct": 0, "total": 0})
+    sess["sev_analytics"] = defaultdict(lambda: {"correct": 0, "total": 0})
+    sess["redact_level"] = req.redact_level
+    obs = sess["env"].reset(req.task_id)
+
+    result = obs.model_dump()
+    result["alert"]["body"] = _redact_text(result["alert"]["body"], req.redact_level)
+    result["alert"]["title"] = _redact_text(result["alert"]["title"], req.redact_level * 0.3)
+    result["session_id"] = sid
+    result["mode"] = "redacted"
+    result["redact_level"] = req.redact_level
+    result["total_steps"] = len(sess["env"]._alert_ids)
+    return result
+
+@app.post("/redacted/step")
+def redacted_step(req: StepRequest):
+    """Step in redacted mode — next alert also gets redacted."""
+    sid = req.session_id or _default_session
+    sess = _get_session(sid)
+    redact_level = sess.get("redact_level", 0.5)
+    try:
+        action = Action(severity=req.severity, incident_type=req.incident_type,
+                        team=req.team, status_update=req.status_update,
+                        is_false_positive=req.is_false_positive)
+        next_obs, reward, done, info = sess["env"].step(action)
+
+        if reward.value >= 0.99:
+            sess["streak"] += 1; sess["best_streak"] = max(sess.get("best_streak",0), sess["streak"])
+        else:
+            sess["streak"] = 0
+
+        result = {
+            "reward": reward.model_dump(),
+            "done": done, "info": info,
+            "streak": sess["streak"],
+            "session_id": sid, "mode": "redacted",
+        }
+        if next_obs:
+            obs_dict = next_obs.model_dump()
+            obs_dict["alert"]["body"] = _redact_text(obs_dict["alert"]["body"], redact_level)
+            obs_dict["alert"]["title"] = _redact_text(obs_dict["alert"]["title"], redact_level * 0.3)
+            result["observation"] = obs_dict
+        else:
+            result["observation"] = None
+        return result
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 def main():
     """Entry point for multi-mode deployment."""
     import uvicorn, os

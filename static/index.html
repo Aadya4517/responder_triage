@@ -452,6 +452,54 @@ footer span{color:var(--purple-mid)}
         Loading missions…
       </div>
     </div>
+
+    <!-- SPECIAL CHALLENGE MODES -->
+    <div style="margin-top:2.5rem">
+      <div class="section-title" style="font-size:1.4rem">⚡ Special Challenge Modes</div>
+      <div class="section-sub">Push your limits with these extreme triage scenarios.</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.2rem;margin-top:1.2rem">
+
+        <!-- BLITZ -->
+        <div style="background:linear-gradient(135deg,#1e1b4b,#312e81);border-radius:16px;padding:1.5rem;color:#fff;position:relative;overflow:hidden">
+          <div style="position:absolute;top:-20px;right:-20px;font-size:5rem;opacity:.1">⚡</div>
+          <div style="font-size:1.5rem;margin-bottom:.4rem">⚡ Blitz Mode</div>
+          <div style="font-size:.85rem;opacity:.8;margin-bottom:1rem;line-height:1.5">10 alerts. 60 seconds. No hints. Score × speed multiplier. Finish in 30s = 2× score.</div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
+            <span style="background:rgba(255,255,255,.15);padding:.2rem .6rem;border-radius:20px;font-size:.7rem;font-weight:700">⏱ 60s limit</span>
+            <span style="background:rgba(255,255,255,.15);padding:.2rem .6rem;border-radius:20px;font-size:.7rem;font-weight:700">2× multiplier</span>
+            <span style="background:rgba(255,255,255,.15);padding:.2rem .6rem;border-radius:20px;font-size:.7rem;font-weight:700">No hints</span>
+          </div>
+          <button onclick="startBlitzMode()" style="background:#fff;color:#312e81;border:none;border-radius:9px;padding:.6rem 1.4rem;font-weight:800;font-size:.9rem;cursor:pointer;transition:all .2s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='none'">Start Blitz →</button>
+        </div>
+
+        <!-- BLACKOUT -->
+        <div style="background:linear-gradient(135deg,#111827,#1f2937);border-radius:16px;padding:1.5rem;color:#fff;position:relative;overflow:hidden">
+          <div style="position:absolute;top:-20px;right:-20px;font-size:5rem;opacity:.1">🔴</div>
+          <div style="font-size:1.5rem;margin-bottom:.4rem">🔴 Blackout Mode</div>
+          <div style="font-size:.85rem;opacity:.8;margin-bottom:1rem;line-height:1.5">Alert body is hidden. Only title + source visible. Triage like a real 3am pager alert with zero context.</div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
+            <span style="background:rgba(255,255,255,.15);padding:.2rem .6rem;border-radius:20px;font-size:.7rem;font-weight:700">Body hidden</span>
+            <span style="background:rgba(255,255,255,.15);padding:.2rem .6rem;border-radius:20px;font-size:.7rem;font-weight:700">Title only</span>
+            <span style="background:rgba(255,255,255,.15);padding:.2rem .6rem;border-radius:20px;font-size:.7rem;font-weight:700">Extreme</span>
+          </div>
+          <button onclick="startBlackoutMode()" style="background:#fff;color:#111827;border:none;border-radius:9px;padding:.6rem 1.4rem;font-weight:800;font-size:.9rem;cursor:pointer;transition:all .2s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='none'">Start Blackout →</button>
+        </div>
+
+        <!-- REDACTED -->
+        <div style="background:linear-gradient(135deg,#7c2d12,#9a3412);border-radius:16px;padding:1.5rem;color:#fff;position:relative;overflow:hidden">
+          <div style="position:absolute;top:-20px;right:-20px;font-size:5rem;opacity:.1">████</div>
+          <div style="font-size:1.5rem;margin-bottom:.4rem">████ Redacted Mode</div>
+          <div style="font-size:.85rem;opacity:.8;margin-bottom:1rem;line-height:1.5">Key words are blacked out like a classified document. Triage with incomplete, censored information.</div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
+            <span style="background:rgba(255,255,255,.15);padding:.2rem .6rem;border-radius:20px;font-size:.7rem;font-weight:700">████ redacted</span>
+            <span style="background:rgba(255,255,255,.15);padding:.2rem .6rem;border-radius:20px;font-size:.7rem;font-weight:700">Classified</span>
+            <span style="background:rgba(255,255,255,.15);padding:.2rem .6rem;border-radius:20px;font-size:.7rem;font-weight:700">Brutal</span>
+          </div>
+          <button onclick="startRedactedMode()" style="background:#fff;color:#9a3412;border:none;border-radius:9px;padding:.6rem 1.4rem;font-weight:800;font-size:.9rem;cursor:pointer;transition:all .2s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='none'">Start Redacted →</button>
+        </div>
+
+      </div>
+    </div>
   </div>
 </section>
 
@@ -508,7 +556,13 @@ footer span{color:var(--purple-mid)}
         <div class="triage-title" id="triageTaskName">Incident Triage</div>
         <div style="font-size:.82rem;color:var(--muted)" id="triagePersona"></div>
       </div>
-      <button class="btn-secondary" onclick="exitTriage()" style="font-size:.85rem;padding:.4rem .9rem">← Back to Tasks</button>
+      <div style="display:flex;gap:.8rem;align-items:center">
+        <!-- BLITZ COUNTDOWN -->
+        <div id="blitzCountdown" style="display:none;background:#1e1b4b;color:#fff;padding:.4rem 1rem;border-radius:10px;font-weight:800;font-size:1rem;font-family:monospace;min-width:80px;text-align:center"></div>
+        <!-- MODE BADGE -->
+        <div id="modeBadge" style="display:none;padding:.3rem .8rem;border-radius:20px;font-size:.75rem;font-weight:700"></div>
+        <button class="btn-secondary" onclick="exitTriage()" style="font-size:.85rem;padding:.4rem .9rem">← Back</button>
+      </div>
     </div>
     <div class="progress-wrap">
       <div class="progress-label">
@@ -748,6 +802,9 @@ const S = {
   speedInterval: null,     // speed timer interval
   aiSuggestion: null,      // current AI suggestion
   isDaily: false,          // daily challenge mode
+  challengeMode: null,     // 'blitz' | 'blackout' | 'redacted' | null
+  blitzDeadline: null,
+  blitzInterval: null,
 };
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
@@ -1256,6 +1313,10 @@ function showToast(msg, type='info') {
 // ─── EXIT / RESTART ───────────────────────────────────────────────────────────
 function exitTriage() {
   stopTimer();
+  if (S.blitzInterval) clearInterval(S.blitzInterval);
+  S.challengeMode = null;
+  document.getElementById('blitzCountdown').style.display = 'none';
+  document.getElementById('modeBadge').style.display = 'none';
   document.getElementById('triageSection').style.display = 'none';
   document.getElementById('autopsySection').style.display = 'none';
   document.getElementById('hero').style.display = 'flex';
@@ -1500,18 +1561,200 @@ async function loadDrift() {
     const r = await fetch('/drift?session_id=' + S.sessionId);
     const d = await r.json();
     if (d.message) return;
-    // Update stat
-    const el = document.getElementById('statStreak');
-    if (el && d.bias !== 'well-calibrated') {
-      // Show drift warning subtly
-      const driftEl = document.getElementById('driftIndicator');
-      if (driftEl) {
-        driftEl.textContent = d.bias === 'over-escalating' ? '⬆ Over-escalating' : '⬇ Under-escalating';
-        driftEl.style.color = d.bias === 'over-escalating' ? '#ef4444' : '#f59e0b';
+    const driftEl = document.getElementById('driftIndicator');
+    if (driftEl) {
+      if (d.bias === 'well-calibrated') {
+        driftEl.textContent = '✓ Calibrated';
+        driftEl.style.color = 'var(--green)';
+      } else if (d.bias === 'over-escalating') {
+        driftEl.textContent = '⬆ Over-escalating';
+        driftEl.style.color = '#ef4444';
+      } else {
+        driftEl.textContent = '⬇ Under-escalating';
+        driftEl.style.color = '#f59e0b';
       }
     }
   } catch(e) {}
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CHALLENGE MODES
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── SHARED: setup triage UI for any challenge mode ──────────────────────────
+function setupChallengeUI(title, badgeText, badgeColor) {
+  S.rewards = []; S.step = 0; S.severity = null; S.done = false;
+  document.getElementById('timeline').innerHTML = '';
+  document.getElementById('hintBox').style.display = 'none';
+  document.getElementById('mentorCard').classList.remove('show');
+  document.getElementById('aiSuggest').classList.remove('show');
+  clearSevButtons();
+  document.getElementById('hero').style.display = 'none';
+  document.getElementById('triageSection').style.display = 'block';
+  document.getElementById('autopsySection').style.display = 'none';
+  document.getElementById('triageSection').scrollIntoView({behavior:'smooth'});
+  document.getElementById('triageTaskName').textContent = title;
+  document.getElementById('triagePersona').textContent = '';
+  document.getElementById('statusGroup').style.display = 'none';
+  document.getElementById('fpRow').style.display = 'none';
+  const badge = document.getElementById('modeBadge');
+  badge.textContent = badgeText;
+  badge.style.background = badgeColor;
+  badge.style.color = '#fff';
+  badge.style.display = 'block';
+}
+
+// ── BLITZ MODE ───────────────────────────────────────────────────────────────
+async function startBlitzMode() {
+  S.sessionId = 'blitz_' + Date.now();
+  S.challengeMode = 'blitz';
+  setupChallengeUI('⚡ Blitz Mode', '⚡ BLITZ', '#312e81');
+
+  try {
+    const r = await fetch('/blitz/reset', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({task_id:'hard', session_id:S.sessionId, time_limit_s:60})
+    });
+    const obs = await r.json();
+    S.totalSteps = obs.total_steps || 10;
+    S.blitzDeadline = obs.deadline_unix * 1000;
+
+    renderAlert(obs);
+    startTimer();
+    updateProgress();
+    startBlitzCountdown(obs.deadline_unix);
+    showToast('⚡ BLITZ! 60 seconds. Go go go!', 'warn');
+  } catch(e) { showToast('Failed: ' + e.message, 'error'); }
+}
+
+function startBlitzCountdown(deadlineUnix) {
+  const el = document.getElementById('blitzCountdown');
+  el.style.display = 'block';
+  const interval = setInterval(() => {
+    const remaining = Math.max(0, deadlineUnix - Date.now()/1000);
+    const s = Math.floor(remaining);
+    el.textContent = '⏱ ' + s + 's';
+    el.style.background = s <= 10 ? '#ef4444' : s <= 20 ? '#f97316' : '#312e81';
+    if (remaining <= 0) {
+      clearInterval(interval);
+      el.textContent = '⏱ TIME!';
+      el.style.background = '#ef4444';
+      if (!S.done) {
+        S.done = true;
+        showToast("⏱ Time's up!", 'warn');
+        setTimeout(() => showDone({}), 800);
+      }
+    }
+  }, 200);
+  S.blitzInterval = interval;
+}
+
+// ── BLACKOUT MODE ─────────────────────────────────────────────────────────────
+async function startBlackoutMode() {
+  S.sessionId = 'blackout_' + Date.now();
+  S.challengeMode = 'blackout';
+  setupChallengeUI('🔴 Blackout Mode', '🔴 BLACKOUT', '#111827');
+
+  try {
+    const r = await fetch('/blackout/reset', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({task_id:'medium', session_id:S.sessionId})
+    });
+    const obs = await r.json();
+    S.totalSteps = obs.total_steps || 8;
+    renderAlert(obs);
+    startTimer();
+    updateProgress();
+    showToast('🔴 Blackout! Body hidden — triage on title only.', 'warn');
+  } catch(e) { showToast('Failed: ' + e.message, 'error'); }
+}
+
+// ── REDACTED MODE ─────────────────────────────────────────────────────────────
+async function startRedactedMode() {
+  S.sessionId = 'redacted_' + Date.now();
+  S.challengeMode = 'redacted';
+  setupChallengeUI('████ Redacted Mode', '████ REDACTED', '#9a3412');
+
+  try {
+    const r = await fetch('/redacted/reset', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({task_id:'medium', session_id:S.sessionId, redact_level:0.5})
+    });
+    const obs = await r.json();
+    S.totalSteps = obs.total_steps || 8;
+    renderAlert(obs);
+    startTimer();
+    updateProgress();
+    showToast('████ Redacted! Key words are classified.', 'warn');
+  } catch(e) { showToast('Failed: ' + e.message, 'error'); }
+}
+
+// ── OVERRIDE doSubmit to route to correct challenge endpoint ──────────────────
+// Patch the existing doSubmit to use challenge-specific endpoints
+const _origDoSubmitChallenge = doSubmit;
+async function doSubmit() {
+  if (S.challengeMode === 'blitz') {
+    await doBlitzStep();
+  } else if (S.challengeMode === 'blackout') {
+    await doBlackoutStep();
+  } else if (S.challengeMode === 'redacted') {
+    await doRedactedStep();
+  } else {
+    await _origDoSubmitChallenge();
+  }
+}
+
+async function _challengeStep(endpoint) {
+  stopSpeedTimer();
+  if (!S.severity) { showToast('Select a severity', 'warn'); return; }
+  const incType = document.getElementById('incidentType').value;
+  const team = document.getElementById('teamSelect').value;
+  if (!incType || !team) { showToast('Fill all fields', 'warn'); return; }
+
+  document.getElementById('submitBtn').disabled = true;
+  const timeTakenMs = S.alertShownAt ? Date.now() - S.alertShownAt : 5000;
+
+  const body = {
+    severity: S.severity, incident_type: incType, team,
+    session_id: S.sessionId, time_taken_ms: timeTakenMs,
+  };
+
+  try {
+    const r = await fetch(endpoint, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    const reward = data.reward?.value ?? 0;
+    S.rewards.push(reward); S.step++;
+    addTimeline({sev: S.severity, reward, step: S.step});
+    showResultToast(data);
+    updateStats(data);
+    if (reward < 0.99 && data.info?.alert_id) setTimeout(() => loadSREMentor(data.info.alert_id), 500);
+    loadDrift();
+
+    if (data.done || S.step >= S.totalSteps) {
+      S.done = true;
+      if (S.blitzInterval) clearInterval(S.blitzInterval);
+      document.getElementById('blitzCountdown').style.display = 'none';
+      if (data.blitz_summary) {
+        showToast(`${data.blitz_summary.verdict} Score: ${data.blitz_summary.final_score} (${data.blitz_summary.speed_multiplier}×)`, 'success');
+      }
+      setTimeout(() => showDone(data), 1000);
+    } else if (data.observation) {
+      setTimeout(() => renderAlert(data.observation), 500);
+      updateProgress();
+    }
+    document.getElementById('incidentType').value = '';
+    document.getElementById('teamSelect').value = '';
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+  finally { document.getElementById('submitBtn').disabled = false; }
+}
+
+async function doBlitzStep() { await _challengeStep('/blitz/step'); }
+async function doBlackoutStep() { await _challengeStep('/blackout/step'); }
+async function doRedactedStep() { await _challengeStep('/redacted/step'); }
+
 
 </script>
 </body>
