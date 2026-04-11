@@ -28,6 +28,16 @@ Endpoints:
   GET  /calibration       confidence vs accuracy calibration report (unique)
   GET  /simulate/storm    cascading incident storm scenario (unique)
   GET  /feed              SSE live alert stream like PagerDuty (unique)
+  GET  /explain/sre       "What would a senior SRE do?" mentor explainer (unique)
+  GET  /explain/last      Explain last action with SRE reasoning (unique)
+  POST /fingerprint       Alert DNA — auto-suggest severity+team from text (unique)
+  GET  /daily/challenge   Daily challenge — same alerts for everyone today (unique)
+  POST /daily/reset       Start a daily challenge session (unique)
+  POST /daily/submit      Submit score to daily leaderboard (unique)
+  GET  /daily/leaderboard Today's daily challenge rankings (unique)
+  POST /step/timed        Timed triage — speed bonus for fast P1 decisions (unique)
+  GET  /speed/leaderboard Fastest triage times leaderboard (unique)
+  GET  /drift             Severity drift detector — are you systematically biased? (unique)
 """
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
@@ -786,6 +796,469 @@ async def alert_feed(task_id: str = "medium"):
         yield f"data: {json.dumps({'type':'end','total_sent':len(ids)})}\n\n"
     return StreamingResponse(generate(), media_type="text/event-stream",
                              headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FEATURE 1: AI EXPLAINER — "What would a senior SRE do?"
+# After each step, explains why the correct answer was right using LLM-style
+# rule-based reasoning (no external API needed — deterministic expert system)
+# ══════════════════════════════════════════════════════════════════════════════
+
+_SRE_WISDOM = {
+    "severity": {
+        "P1": [
+            "P1 = revenue impact or total outage. Look for: dollar amounts, '100% failing', 'all users affected'.",
+            "If the alert mentions payment failures, checkout errors, or complete service unavailability — that's P1.",
+            "P1 requires immediate response. Revenue loss per minute is the clearest signal.",
+        ],
+        "P2": [
+            "P2 = major degradation but not total outage. Partial failures, elevated error rates, security incidents.",
+            "Security breaches (credential stuffing, login spikes) are typically P2 — serious but not revenue-stopping.",
+            "P2 means the service is degraded but still partially functional. Escalate fast but don't panic.",
+        ],
+        "P3": [
+            "P3 = minor issue with a workaround. Cert expiry with days of runway, disk at 80%, CDN cache issues.",
+            "If there's a deadline but no immediate impact, it's P3. Schedule it, don't page at 3am.",
+            "P3 alerts need attention within hours, not minutes. No user impact yet.",
+        ],
+        "P4": [
+            "P4 = informational. Planned maintenance, successful backups with minor warnings, scheduled jobs.",
+            "If the alert says 'planned', 'scheduled', 'expected', or 'no customer impact' — it's P4.",
+            "P4 is noise you need to track but not act on urgently. Don't over-triage scheduled work.",
+        ],
+    },
+    "team": {
+        "database": "Database team owns: connection pools, replication lag, query performance, DB crashes.",
+        "backend": "Backend team owns: application errors, payment processing, API failures, NullPointerExceptions.",
+        "infra": "Infra team owns: SSL certs, disk space, load balancers, cloud infrastructure, scheduled maintenance.",
+        "security": "Security team owns: login spikes, credential stuffing, data exfiltration, auth failures.",
+        "frontend": "Frontend team owns: CDN issues, cache staleness, UI rendering, static asset delivery.",
+    },
+    "false_positive": {
+        True: "False positive signals: 'scheduled', 'expected', 'authorized', 'planned', 'within SLA', 'dedicated host'.",
+        False: "Real incident signals: revenue impact, user-facing errors, unexpected spikes, cascading failures.",
+    }
+}
+
+@app.get("/explain/sre")
+def sre_explainer(alert_id: str, session_id: Optional[str] = None):
+    """
+    'What would a senior SRE do?' — deterministic expert explanation for any alert.
+    Returns the correct triage decision with reasoning, like a mentor reviewing your call.
+    """
+    alert = ALL_ALERT_MAP.get(alert_id)
+    if not alert:
+        raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found")
+
+    exp_sev = alert.get("expected_severity", "P3")
+    exp_team = alert.get("expected_team", "backend")
+    exp_type = alert.get("expected_type", "application")
+    is_fp = alert.get("is_false_positive", False)
+    diff = _DIFFICULTY.get(alert_id, {})
+
+    import random
+    sev_tips = _SRE_WISDOM["severity"].get(exp_sev, [])
+    sev_tip = random.choice(sev_tips) if sev_tips else ""
+    team_tip = _SRE_WISDOM["team"].get(exp_team, "")
+    fp_tip = _SRE_WISDOM["false_positive"].get(is_fp, "")
+
+    # Extract key signals from alert body
+    body = alert.get("body", "").lower()
+    signals = []
+    if any(w in body for w in ["revenue", "$/min", "dollar", "payment", "checkout"]):
+        signals.append("💰 Revenue impact detected")
+    if any(w in body for w in ["100%", "all ", "complete", "total"]):
+        signals.append("🔴 Total/complete failure signal")
+    if any(w in body for w in ["scheduled", "planned", "maintenance", "expected"]):
+        signals.append("📅 Planned/scheduled event signal")
+    if any(w in body for w in ["false", "authorized", "within sla", "dedicated"]):
+        signals.append("✅ False positive signal")
+    if any(w in body for w in ["login", "credential", "brute", "attack", "foreign"]):
+        signals.append("🔒 Security threat signal")
+    if any(w in body for w in ["replica", "lag", "connection pool", "too many connections"]):
+        signals.append("🗄️ Database overload signal")
+
+    return {
+        "alert_id": alert_id,
+        "alert_title": alert.get("title", ""),
+        "correct_answer": {
+            "severity": exp_sev,
+            "team": exp_team,
+            "incident_type": exp_type,
+            "is_false_positive": is_fp,
+        },
+        "difficulty": diff.get("score"),
+        "difficulty_reason": diff.get("reason"),
+        "key_signals": signals,
+        "senior_sre_says": {
+            "severity_reasoning": sev_tip,
+            "team_reasoning": team_tip,
+            "false_positive_note": fp_tip if is_fp else None,
+        },
+        "one_liner": f"This is {exp_sev} → {exp_team} team. {diff.get('reason', '')}",
+    }
+
+
+@app.get("/explain/last")
+def explain_last_sre(session_id: Optional[str] = None):
+    """Explain the last action taken with full SRE mentor reasoning."""
+    sid = session_id or _default_session
+    sess = _get_session(sid)
+    last = sess["last_result"] if session_id else _last_result
+    if not last:
+        return {"message": "No action taken yet."}
+    alert_id = last.get("alert_id")
+    if not alert_id:
+        return {"message": "No alert_id in last result."}
+    base = sre_explainer(alert_id, session_id)
+    base["your_answer"] = last.get("action", {})
+    base["your_reward"] = last.get("reward", 0)
+    base["breakdown"] = last.get("breakdown", {})
+    # Was it correct?
+    correct = last.get("reward", 0) >= 0.99
+    base["verdict"] = "✅ Correct call!" if correct else "❌ Missed this one — here's what a senior SRE would do:"
+    return base
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FEATURE 2: ALERT DNA FINGERPRINTING — auto-suggest severity + team
+# Analyzes alert body with keyword heuristics before user submits
+# ══════════════════════════════════════════════════════════════════════════════
+
+_SEVERITY_SIGNALS = {
+    "P1": ["revenue", "$/min", "payment", "checkout", "100% fail", "all users", "complete outage",
+           "nullpointerexception", "503", "down", "unreachable", "critical"],
+    "P2": ["degraded", "elevated", "partial", "login spike", "credential", "brute force",
+           "split-brain", "latency", "error rate", "p99", "security"],
+    "P3": ["expir", "disk", "cdn", "cache", "runway", "warning", "notice", "renewal"],
+    "P4": ["scheduled", "planned", "maintenance", "informational", "backup", "completed",
+           "no customer impact", "expected", "authorized", "within sla"],
+}
+_TEAM_SIGNALS = {
+    "database": ["database", "db", "connection pool", "replica", "replication", "postgres", "mysql", "redis"],
+    "backend": ["payment", "checkout", "api", "503", "nullpointer", "application", "service"],
+    "infra": ["ssl", "cert", "disk", "load balancer", "maintenance", "infrastructure", "cloud"],
+    "security": ["login", "credential", "brute", "attack", "foreign ip", "exfiltration", "auth"],
+    "frontend": ["cdn", "cache", "static", "ui", "rendering", "frontend"],
+}
+
+@app.post("/fingerprint")
+def fingerprint_alert(req: dict):
+    """
+    Alert DNA Fingerprinting — analyze alert text and suggest severity + team
+    with confidence scores. Like autocomplete for incident triage.
+    """
+    text = (req.get("title", "") + " " + req.get("body", "")).lower()
+
+    sev_scores = {}
+    for sev, keywords in _SEVERITY_SIGNALS.items():
+        hits = sum(1 for kw in keywords if kw in text)
+        sev_scores[sev] = hits
+
+    team_scores = {}
+    for team, keywords in _TEAM_SIGNALS.items():
+        hits = sum(1 for kw in keywords if kw in text)
+        team_scores[team] = hits
+
+    best_sev = max(sev_scores, key=sev_scores.get)
+    best_team = max(team_scores, key=team_scores.get)
+    total_sev = sum(sev_scores.values()) or 1
+    total_team = sum(team_scores.values()) or 1
+
+    sev_conf = round(sev_scores[best_sev] / total_sev, 2)
+    team_conf = round(team_scores[best_team] / total_team, 2)
+
+    # Fallback if no signals
+    if sev_scores[best_sev] == 0:
+        best_sev = "P3"
+        sev_conf = 0.1
+    if team_scores[best_team] == 0:
+        best_team = "backend"
+        team_conf = 0.1
+
+    return {
+        "suggested_severity": best_sev,
+        "severity_confidence": sev_conf,
+        "suggested_team": best_team,
+        "team_confidence": team_conf,
+        "severity_breakdown": {k: round(v/total_sev, 2) for k, v in sev_scores.items()},
+        "team_breakdown": {k: round(v/total_team, 2) for k, v in team_scores.items()},
+        "note": "AI suggestion based on alert text analysis. Always verify before submitting.",
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FEATURE 3: DAILY CHALLENGE — same alerts for everyone, seeded by date
+# ══════════════════════════════════════════════════════════════════════════════
+
+DAILY_LB_FILE = Path("daily_leaderboard.json")
+
+def _load_daily_lb() -> dict:
+    if DAILY_LB_FILE.exists():
+        try: return json.loads(DAILY_LB_FILE.read_text())
+        except: return {}
+    return {}
+
+def _save_daily_lb(data: dict):
+    DAILY_LB_FILE.write_text(json.dumps(data, indent=2))
+
+@app.get("/daily/challenge")
+def daily_challenge():
+    """
+    Daily Challenge — same 5 alerts for everyone today, seeded by date.
+    Like Wordle for SREs. Resets at midnight UTC.
+    """
+    import hashlib
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    seed = int(hashlib.md5(today.encode()).hexdigest(), 16) % 10000
+
+    # Pick 5 alerts deterministically from the pool
+    all_ids = list(ALL_ALERT_MAP.keys())
+    import random as rnd
+    rnd.seed(seed)
+    daily_ids = rnd.sample(all_ids, min(5, len(all_ids)))
+
+    alerts_preview = []
+    for aid in daily_ids:
+        a = ALL_ALERT_MAP[aid]
+        alerts_preview.append({
+            "id": aid,
+            "source": a.get("source", ""),
+            "title": a.get("title", ""),
+            # Don't reveal expected answers
+        })
+
+    return {
+        "date": today,
+        "seed": seed,
+        "alert_ids": daily_ids,
+        "alerts": alerts_preview,
+        "task_id": "daily_" + today,
+        "note": "Same 5 alerts for everyone today. Resets at midnight UTC.",
+        "how_to_play": "POST /daily/reset to start, then POST /step as normal.",
+    }
+
+@app.post("/daily/reset")
+def daily_reset(req: Optional[ResetRequest] = None):
+    """Start a daily challenge session."""
+    import hashlib, random as rnd
+    if req is None:
+        req = ResetRequest()
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    seed = int(hashlib.md5(today.encode()).hexdigest(), 16) % 10000
+    all_ids = list(ALL_ALERT_MAP.keys())
+    rnd.seed(seed)
+    daily_ids = rnd.sample(all_ids, min(5, len(all_ids)))
+
+    sid = req.session_id or ("daily_" + today + "_" + str(int(time.time())))
+    sess = _get_session(sid)
+    sess["streak"] = 0
+    sess["last_result"] = {}
+    sess["timeline"] = []
+    sess["start"] = time.time()
+    sess["task_id"] = "daily"
+    sess["analytics"] = defaultdict(lambda: {"correct": 0, "total": 0})
+    sess["sev_analytics"] = defaultdict(lambda: {"correct": 0, "total": 0})
+
+    # Manually set up the env with daily alert IDs
+    env = sess["env"]
+    env._task_id = "daily"
+    env._alert_ids = daily_ids
+    env._grade_fields = ["severity", "team"]
+    env._persona = None
+    env._noise_level = 0.0
+    env._step_idx = 0
+    env._episode_rewards = []
+    env._done = False
+    env._alert_cache = {aid: ALL_ALERT_MAP[aid] for aid in daily_ids}
+
+    obs = env._make_obs()
+    result = obs.model_dump()
+    result["session_id"] = sid
+    result["daily_date"] = today
+    result["total_steps"] = len(daily_ids)
+    return result
+
+@app.post("/daily/submit")
+def daily_submit(entry: LeaderboardEntry):
+    """Submit score to daily leaderboard."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    lb = _load_daily_lb()
+    if today not in lb:
+        lb[today] = []
+    lb[today].append({
+        "name": entry.name[:32],
+        "score": round(entry.score, 4),
+        "grade": entry.grade,
+        "steps": entry.steps,
+        "ts": int(time.time()),
+        "ts_ist": now_ist_display(),
+    })
+    lb[today].sort(key=lambda x: x["score"], reverse=True)
+    lb[today] = lb[today][:100]
+    _save_daily_lb(lb)
+    rank = next((i+1 for i, e in enumerate(lb[today]) if e["ts"] == lb[today][-1]["ts"]), len(lb[today]))
+    return {"saved": True, "date": today, "rank": rank, "total": len(lb[today])}
+
+@app.get("/daily/leaderboard")
+def daily_leaderboard(limit: int = 20):
+    """Get today's daily challenge leaderboard."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    lb = _load_daily_lb()
+    entries = lb.get(today, [])
+    return {
+        "date": today,
+        "entries": entries[:limit],
+        "total": len(entries),
+        "resets_in": _time_until_midnight(),
+    }
+
+def _time_until_midnight() -> str:
+    now = datetime.now(timezone.utc)
+    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    delta = midnight - now
+    h, m = divmod(delta.seconds // 60, 60)
+    return f"{h}h {m}m"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FEATURE 4: TIME-TO-TRIAGE SCORING — speed bonus for fast P1 decisions
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TimedStepRequest(BaseModel):
+    severity: str
+    incident_type: str
+    team: str
+    time_taken_ms: int  # milliseconds since alert was shown
+    status_update: Optional[str] = None
+    is_false_positive: Optional[bool] = None
+    session_id: Optional[str] = None
+
+_SPEED_THRESHOLDS = {
+    "P1": {"fast": 8000, "ok": 20000},   # <8s = fast, <20s = ok, else slow
+    "P2": {"fast": 15000, "ok": 35000},
+    "P3": {"fast": 25000, "ok": 60000},
+    "P4": {"fast": 30000, "ok": 90000},
+}
+
+@app.post("/step/timed")
+def step_timed(req: TimedStepRequest):
+    """
+    Like /step but with time-to-triage scoring.
+    P1s triaged in under 8 seconds get a speed bonus.
+    Slow P1 triage gets a penalty — in real incidents, every second counts.
+    """
+    sid = req.session_id or _default_session
+    sess = _get_session(sid)
+
+    action = Action(
+        severity=req.severity,
+        incident_type=req.incident_type,
+        team=req.team,
+        status_update=req.status_update,
+        is_false_positive=req.is_false_positive,
+    )
+    next_obs, reward, done, info = sess["env"].step(action)
+
+    alert_id = info["alert_id"]
+    alert = ALL_ALERT_MAP.get(alert_id, {})
+    expected_sev = alert.get("expected_severity", "P3")
+    thresholds = _SPEED_THRESHOLDS.get(expected_sev, _SPEED_THRESHOLDS["P3"])
+
+    # Speed bonus/penalty
+    t = req.time_taken_ms
+    if t <= thresholds["fast"]:
+        speed_label = "⚡ Lightning fast"
+        speed_bonus = 0.1 if expected_sev == "P1" else 0.05
+    elif t <= thresholds["ok"]:
+        speed_label = "✅ Good response time"
+        speed_bonus = 0.0
+    else:
+        speed_label = "🐢 Too slow for this severity"
+        speed_bonus = -0.1 if expected_sev == "P1" else -0.05
+
+    # Apply bonus to reward
+    adjusted_reward = round(min(1.0, max(0.0, reward.value + speed_bonus)), 4)
+
+    return {
+        "observation": next_obs.model_dump() if next_obs else None,
+        "reward": {"value": adjusted_reward, "base_reward": reward.value, "breakdown": reward.breakdown},
+        "done": done,
+        "info": info,
+        "speed": {
+            "time_ms": t,
+            "label": speed_label,
+            "bonus": speed_bonus,
+            "threshold_fast_ms": thresholds["fast"],
+            "threshold_ok_ms": thresholds["ok"],
+        },
+        "streak": sess["streak"],
+        "session_id": sid,
+    }
+
+@app.get("/speed/leaderboard")
+def speed_leaderboard():
+    """Fastest average triage times from the global leaderboard."""
+    lb = _load_lb()
+    timed = [e for e in lb if e.get("time_total")]
+    timed.sort(key=lambda x: x["time_total"])
+    return {
+        "fastest": timed[:10],
+        "note": "Ranked by total episode time. Includes all tasks.",
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FEATURE 5: SEVERITY DRIFT DETECTOR — are you systematically biased?
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/drift")
+def severity_drift(session_id: Optional[str] = None):
+    """
+    Detects systematic severity bias — are you always over-escalating to P1
+    or under-escalating to P3? Shows your drift score and corrective advice.
+    """
+    sid = session_id or _default_session
+    tl = _get_session(sid)["timeline"] if session_id else _timeline
+    if not tl:
+        return {"message": "No episode data."}
+
+    SEV_NUM = {"P1": 1, "P2": 2, "P3": 3, "P4": 4}
+    diffs = []
+    over_escalations = 0
+    under_escalations = 0
+
+    for entry in tl:
+        exp = entry["expected"].get("severity")
+        act = entry["action"].get("severity")
+        if exp and act and exp in SEV_NUM and act in SEV_NUM:
+            diff = SEV_NUM[act] - SEV_NUM[exp]  # negative = over-escalated, positive = under
+            diffs.append(diff)
+            if diff < 0: over_escalations += 1
+            elif diff > 0: under_escalations += 1
+
+    if not diffs:
+        return {"message": "No severity data yet."}
+
+    mean_drift = round(sum(diffs) / len(diffs), 3)
+    bias = "over-escalating" if mean_drift < -0.3 else "under-escalating" if mean_drift > 0.3 else "well-calibrated"
+
+    advice = {
+        "over-escalating": "You're treating too many alerts as more critical than they are. Look for 'planned', 'scheduled', 'no impact' signals before jumping to P1/P2.",
+        "under-escalating": "You're not taking alerts seriously enough. Revenue impact, complete failures, and security breaches need P1/P2 — don't downplay them.",
+        "well-calibrated": "Your severity judgement is well-calibrated. Keep it up.",
+    }
+
+    return {
+        "mean_drift": mean_drift,
+        "bias": bias,
+        "over_escalations": over_escalations,
+        "under_escalations": under_escalations,
+        "correct_severity": len(diffs) - over_escalations - under_escalations,
+        "total": len(diffs),
+        "advice": advice[bias],
+        "drift_scale": "negative = over-escalated (chose higher severity), positive = under-escalated",
+    }
 
 
 def main():

@@ -28,6 +28,69 @@ a{text-decoration:none;color:inherit}
 .nav-cta{background:var(--purple);color:#fff!important;padding:.4rem 1rem;border-radius:8px;font-weight:600!important}
 .nav-cta:hover{background:var(--purple-mid)!important;color:#fff!important}
 
+/* AI SUGGESTION BANNER */
+.ai-suggest{
+  background:linear-gradient(135deg,#f5f3ff,#ede9fe);
+  border:1px solid #c4b5fd;border-radius:12px;padding:.8rem 1rem;
+  margin-bottom:1rem;display:none;align-items:center;gap:.8rem;flex-wrap:wrap;
+}
+.ai-suggest.show{display:flex;animation:slideIn .3s ease;}
+.ai-badge{background:var(--purple);color:#fff;font-size:.65rem;font-weight:700;
+  padding:.2rem .6rem;border-radius:20px;white-space:nowrap;}
+.ai-sev{font-weight:700;font-size:.9rem;}
+.ai-conf{font-size:.75rem;color:var(--muted);}
+.ai-apply{background:var(--purple);color:#fff;border:none;border-radius:7px;
+  padding:.3rem .8rem;font-size:.75rem;font-weight:600;cursor:pointer;transition:all .2s;}
+.ai-apply:hover{background:var(--purple-mid);}
+
+/* SPEED TIMER */
+.speed-timer{
+  display:flex;align-items:center;gap:.5rem;padding:.5rem 1rem;
+  background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;
+  font-size:.82rem;font-weight:600;color:#9a3412;margin-bottom:.8rem;
+}
+.speed-bar{flex:1;height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden;}
+.speed-fill{height:100%;border-radius:3px;transition:width .1s linear,background .3s;}
+
+/* DAILY CHALLENGE BANNER */
+.daily-banner{
+  background:linear-gradient(135deg,#6d28d9,#8b5cf6);
+  color:#fff;border-radius:16px;padding:1.5rem;margin-bottom:1.5rem;
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;
+}
+.daily-banner h3{font-size:1.1rem;font-weight:800;margin-bottom:.3rem;}
+.daily-banner p{font-size:.82rem;opacity:.85;}
+.btn-daily{background:#fff;color:var(--purple);border:none;border-radius:9px;
+  padding:.6rem 1.4rem;font-weight:700;font-size:.9rem;cursor:pointer;transition:all .2s;}
+.btn-daily:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.2);}
+
+/* SRE MENTOR CARD */
+.mentor-card{
+  background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;
+  padding:1rem 1.2rem;margin-top:1rem;display:none;
+}
+.mentor-card.show{display:block;animation:slideIn .3s ease;}
+.mentor-header{display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem;font-weight:700;color:#065f46;}
+.mentor-body{font-size:.82rem;color:#374151;line-height:1.6;}
+.mentor-signals{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.6rem;}
+.signal-chip{background:#d1fae5;color:#065f46;font-size:.7rem;font-weight:600;
+  padding:.2rem .6rem;border-radius:20px;}
+
+/* DRIFT INDICATOR */
+.drift-bar{
+  background:var(--white);border-radius:12px;padding:1rem 1.2rem;
+  box-shadow:var(--card-shadow);margin-top:1rem;
+}
+.drift-label{font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.5px;margin-bottom:.5rem;}
+.drift-track{height:8px;background:#e5e7eb;border-radius:4px;position:relative;overflow:visible;}
+.drift-center{position:absolute;left:50%;top:-2px;width:2px;height:12px;background:#6b7280;}
+.drift-fill{height:100%;border-radius:4px;position:absolute;top:0;transition:all .5s ease;}
+.drift-over{background:#ef4444;right:50%;}
+.drift-under{background:#f59e0b;left:50%;}
+.drift-ok{background:#10b981;left:50%;transform:translateX(-50%);}
+
+
 /* HERO */
 .hero{background:linear-gradient(135deg,#f5f3ff 0%,#ede9fe 60%,#ddd6fe 100%);
   padding:5rem 2rem 4rem;display:flex;align-items:center;justify-content:center;gap:4rem;min-height:520px;position:relative;overflow:hidden}
@@ -282,6 +345,7 @@ footer span{color:var(--purple-mid)}
     <a href="#tasks-section" onclick="scrollTo('#tasks-section')">Tasks</a>
     <a href="#lb-section" onclick="scrollTo('#lb-section')">Leaderboard</a>
     <a href="#how-section">How it Works</a>
+    <a href="javascript:void(0)" onclick="startDailyChallenge()" style="color:var(--purple);font-weight:700;">🗓 Daily Challenge</a>
     <a href="#tasks-section" class="nav-cta">Start Triaging →</a>
   </div>
 </nav>
@@ -372,6 +436,15 @@ footer span{color:var(--purple-mid)}
 <!-- TASK CARDS -->
 <section class="tasks-section" id="tasks-section">
   <div class="tasks-inner">
+    <!-- DAILY CHALLENGE BANNER -->
+    <div class="daily-banner" id="dailyBanner">
+      <div>
+        <h3>🗓 Daily Challenge</h3>
+        <p>Same 5 alerts for everyone today. Compete on the global daily leaderboard. Resets at midnight UTC.</p>
+        <p id="dailyResetText" style="font-size:.75rem;opacity:.7;margin-top:.3rem;"></p>
+      </div>
+      <button class="btn-daily" onclick="startDailyChallenge()">Play Today's Challenge →</button>
+    </div>
     <div class="section-title">Choose Your Mission</div>
     <div class="section-sub">Pick a task and start triaging alerts. Each mission has unique alert types and difficulty.</div>
     <div class="tasks-scroll" id="taskCards">
@@ -464,6 +537,12 @@ footer span{color:var(--purple-mid)}
           </div>
           <button class="hint-btn" onclick="loadHint()">💡 Get Hint</button>
           <div class="hint-box" id="hintBox"></div>
+          <!-- SRE MENTOR -->
+          <div class="mentor-card" id="mentorCard">
+            <div class="mentor-header">🧠 Senior SRE Says</div>
+            <div class="mentor-body" id="mentorBody"></div>
+            <div class="mentor-signals" id="mentorSignals"></div>
+          </div>
         </div>
 
         <!-- TIMELINE -->
@@ -476,6 +555,18 @@ footer span{color:var(--purple-mid)}
       <!-- RIGHT: Form Panel -->
       <div>
         <div class="form-panel">
+          <!-- AI SUGGESTION -->
+          <div class="ai-suggest" id="aiSuggest">
+            <span class="ai-badge">🤖 AI Suggestion</span>
+            <span class="ai-sev" id="aiSevText">—</span>
+            <span class="ai-conf" id="aiConfText"></span>
+            <button class="ai-apply" onclick="applyAISuggestion()">Apply →</button>
+          </div>
+          <!-- SPEED TIMER -->
+          <div class="speed-timer" id="speedTimer">
+            ⏱ <span id="speedTimerText">0.0s</span>
+            <div class="speed-bar"><div class="speed-fill" id="speedFill" style="width:0%;background:var(--green)"></div></div>
+          </div>
           <div class="form-section-title">Severity</div>
           <div class="sev-grid">
             <button class="sev-btn sev-p1" onclick="setSev('P1')">P1<br/><small style="font-size:.65rem;font-weight:400">Critical</small></button>
@@ -551,6 +642,11 @@ footer span{color:var(--purple-mid)}
           <div class="stat-item">
             <div class="stat-val" id="statTimer">0s</div>
             <div class="stat-lbl">Time</div>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-item">
+            <div class="stat-val" style="font-size:.9rem" id="driftIndicator">✓ Calibrated</div>
+            <div class="stat-lbl">Severity Drift</div>
           </div>
         </div>
       </div>
@@ -648,12 +744,17 @@ const S = {
   done: false,
   lastObs: null,
   taskConfig: null,
+  alertShownAt: null,      // for time-to-triage
+  speedInterval: null,     // speed timer interval
+  aiSuggestion: null,      // current AI suggestion
+  isDaily: false,          // daily challenge mode
 };
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   loadTasks();
   loadLeaderboard();
+  loadDailyInfo();
 });
 
 // ─── TASKS ────────────────────────────────────────────────────────────────────
@@ -1166,6 +1267,252 @@ function restartFromAutopsy() {
   document.getElementById('hero').style.display = 'flex';
   document.getElementById('tasks-section').scrollIntoView({behavior:'smooth'});
 }
+
+// ─── FEATURE 1: AI FINGERPRINT — auto-suggest severity+team ──────────────────
+async function fingerprintAlert(title, body) {
+  try {
+    const r = await fetch('/fingerprint', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({title, body})
+    });
+    const d = await r.json();
+    S.aiSuggestion = d;
+    const el = document.getElementById('aiSuggest');
+    const sevColors = {P1:'#ef4444',P2:'#f97316',P3:'#f59e0b',P4:'#10b981'};
+    document.getElementById('aiSevText').innerHTML =
+      `<span style="color:${sevColors[d.suggested_severity]};font-weight:800">${d.suggested_severity}</span> → ${d.suggested_team}`;
+    document.getElementById('aiConfText').textContent =
+      `${Math.round(d.severity_confidence*100)}% confidence`;
+    el.classList.add('show');
+  } catch(e) {}
+}
+
+function applyAISuggestion() {
+  if (!S.aiSuggestion) return;
+  setSev(S.aiSuggestion.suggested_severity);
+  const teamMap = {backend:'backend',infra:'infrastructure',security:'security',database:'database',frontend:'frontend'};
+  const teamEl = document.getElementById('teamSelect');
+  const mapped = teamMap[S.aiSuggestion.suggested_team] || S.aiSuggestion.suggested_team;
+  for (let opt of teamEl.options) {
+    if (opt.value === mapped || opt.value === S.aiSuggestion.suggested_team) {
+      teamEl.value = opt.value; break;
+    }
+  }
+  showToast('AI suggestion applied!', 'success');
+}
+
+// ─── FEATURE 2: SRE MENTOR — explain after wrong answer ──────────────────────
+async function loadSREMentor(alertId) {
+  try {
+    const r = await fetch(`/explain/sre?alert_id=${alertId}`);
+    const d = await r.json();
+    const card = document.getElementById('mentorCard');
+    const body = document.getElementById('mentorBody');
+    const signals = document.getElementById('mentorSignals');
+
+    body.innerHTML = `
+      <strong>Correct:</strong> ${d.correct_answer.severity} → ${d.correct_answer.team}<br/>
+      <em>${d.senior_sre_says.severity_reasoning}</em><br/>
+      <span style="color:#6b7280;font-size:.78rem">${d.senior_sre_says.team_reasoning}</span>
+    `;
+    signals.innerHTML = (d.key_signals || []).map(s =>
+      `<span class="signal-chip">${s}</span>`).join('');
+    card.classList.add('show');
+  } catch(e) {}
+}
+
+// ─── FEATURE 3: SPEED TIMER ───────────────────────────────────────────────────
+function startSpeedTimer(expectedSev) {
+  S.alertShownAt = Date.now();
+  const thresholds = {P1:8000,P2:15000,P3:25000,P4:30000};
+  const limit = thresholds[expectedSev] || 20000;
+  clearInterval(S.speedInterval);
+  S.speedInterval = setInterval(() => {
+    const elapsed = Date.now() - S.alertShownAt;
+    const pct = Math.min(100, (elapsed / limit) * 100);
+    const fill = document.getElementById('speedFill');
+    const text = document.getElementById('speedTimerText');
+    if (fill) {
+      fill.style.width = pct + '%';
+      fill.style.background = pct < 50 ? '#10b981' : pct < 80 ? '#f59e0b' : '#ef4444';
+    }
+    if (text) text.textContent = (elapsed/1000).toFixed(1) + 's';
+  }, 100);
+}
+
+function stopSpeedTimer() {
+  clearInterval(S.speedInterval);
+}
+
+// ─── FEATURE 4: DAILY CHALLENGE ───────────────────────────────────────────────
+async function loadDailyInfo() {
+  try {
+    const r = await fetch('/daily/challenge');
+    const d = await r.json();
+    const el = document.getElementById('dailyResetText');
+    if (el) el.textContent = `Resets in ${d.resets_in || '—'}`;
+  } catch(e) {}
+}
+
+async function startDailyChallenge() {
+  S.isDaily = true;
+  S.selectedTask = 'daily';
+  S.sessionId = 'daily_' + Date.now();
+  S.rewards = []; S.step = 0; S.severity = null; S.done = false;
+  document.getElementById('timeline').innerHTML = '';
+  document.getElementById('hintBox').style.display = 'none';
+  document.getElementById('mentorCard').classList.remove('show');
+  document.getElementById('aiSuggest').classList.remove('show');
+  clearSevButtons();
+
+  try {
+    const r = await fetch('/daily/reset', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({session_id: S.sessionId})
+    });
+    const obs = await r.json();
+    S.totalSteps = obs.total_steps || 5;
+    S.step = obs.step || 0;
+
+    document.getElementById('hero').style.display = 'none';
+    document.getElementById('triageSection').style.display = 'block';
+    document.getElementById('autopsySection').style.display = 'none';
+    document.getElementById('triageSection').scrollIntoView({behavior:'smooth'});
+    document.getElementById('triageTaskName').textContent = '🗓 Daily Challenge';
+    document.getElementById('triagePersona').textContent = obs.daily_date ? `Date: ${obs.daily_date}` : '';
+    document.getElementById('statusGroup').style.display = 'none';
+    document.getElementById('fpRow').style.display = 'none';
+
+    renderAlert(obs);
+    startTimer();
+    updateProgress();
+    showToast("🗓 Daily Challenge started! Same alerts for everyone today.", 'success');
+  } catch(e) {
+    showToast('Failed to start daily challenge: ' + e.message, 'error');
+  }
+}
+
+// ─── OVERRIDE renderAlert to add fingerprint + speed timer ───────────────────
+const _origRenderAlert = renderAlert;
+function renderAlert(obs) {
+  _origRenderAlert(obs);
+  // Hide mentor from previous step
+  document.getElementById('mentorCard').classList.remove('show');
+  document.getElementById('aiSuggest').classList.remove('show');
+
+  const alert = obs.observation || obs.alert || obs;
+  if (alert.title || alert.body) {
+    fingerprintAlert(alert.title || '', alert.body || '');
+  }
+  // Start speed timer — guess severity from title for threshold
+  const titleLower = (alert.title || '').toLowerCase();
+  const guessedSev = titleLower.includes('critical') ? 'P1' :
+                     titleLower.includes('warning') ? 'P2' :
+                     titleLower.includes('notice') ? 'P3' : 'P3';
+  startSpeedTimer(guessedSev);
+}
+
+// ─── OVERRIDE doSubmit to add timed scoring + mentor ─────────────────────────
+const _origDoSubmit = doSubmit;
+async function doSubmit() {
+  stopSpeedTimer();
+  const timeTakenMs = S.alertShownAt ? Date.now() - S.alertShownAt : 5000;
+
+  if (!S.severity) { showToast('Please select a severity level', 'warn'); return; }
+  const incType = document.getElementById('incidentType').value;
+  const team = document.getElementById('teamSelect').value;
+  if (!incType) { showToast('Please select an incident type', 'warn'); return; }
+  if (!team) { showToast('Please select a team', 'warn'); return; }
+
+  document.getElementById('submitBtn').disabled = true;
+
+  const body = {
+    severity: S.severity,
+    incident_type: incType,
+    team: team,
+    session_id: S.sessionId,
+    time_taken_ms: timeTakenMs,
+  };
+
+  const statusEl = document.getElementById('statusUpdate');
+  if (document.getElementById('statusGroup').style.display !== 'none' && statusEl.value.trim()) {
+    body.status_update = statusEl.value.trim();
+  }
+  const fpEl = document.getElementById('isFalsePositive');
+  if (document.getElementById('fpRow').style.display !== 'none') {
+    body.is_false_positive = fpEl.checked;
+  }
+
+  try {
+    // Use timed endpoint
+    const r = await fetch('/step/timed', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const data = await r.json();
+
+    const reward = data.reward?.value ?? data.reward ?? 0;
+    S.rewards.push(reward);
+    S.step++;
+
+    addTimeline({sev: S.severity, reward, step: S.step});
+    showResultToast(data);
+    updateStats(data);
+
+    // Show speed feedback
+    if (data.speed) {
+      const spd = data.speed;
+      const bonus = spd.bonus > 0 ? `+${spd.bonus}` : spd.bonus;
+      showToast(`${spd.label} (${(spd.time_ms/1000).toFixed(1)}s) ${bonus !== 0 ? '→ reward ' + bonus : ''}`, spd.bonus >= 0 ? 'success' : 'warn');
+    }
+
+    // Show SRE mentor if wrong
+    if (reward < 0.99 && data.info?.alert_id) {
+      setTimeout(() => loadSREMentor(data.info.alert_id), 500);
+    }
+
+    // Load drift after each step
+    loadDrift();
+
+    if (data.done || S.step >= S.totalSteps) {
+      S.done = true;
+      setTimeout(() => showDone(data), 1200);
+    } else if (data.observation) {
+      S.lastObs = data.observation;
+      setTimeout(() => renderAlert(data.observation), 600);
+      updateProgress();
+    }
+
+    document.getElementById('incidentType').value = '';
+    document.getElementById('teamSelect').value = '';
+    if (statusEl) statusEl.value = '';
+    if (fpEl) fpEl.checked = false;
+
+  } catch(e) {
+    showToast('Submit failed: ' + e.message, 'error');
+    document.getElementById('submitBtn').disabled = false;
+  }
+}
+
+// ─── DRIFT DETECTOR ───────────────────────────────────────────────────────────
+async function loadDrift() {
+  try {
+    const r = await fetch('/drift?session_id=' + S.sessionId);
+    const d = await r.json();
+    if (d.message) return;
+    // Update stat
+    const el = document.getElementById('statStreak');
+    if (el && d.bias !== 'well-calibrated') {
+      // Show drift warning subtly
+      const driftEl = document.getElementById('driftIndicator');
+      if (driftEl) {
+        driftEl.textContent = d.bias === 'over-escalating' ? '⬆ Over-escalating' : '⬇ Under-escalating';
+        driftEl.style.color = d.bias === 'over-escalating' ? '#ef4444' : '#f59e0b';
+      }
+    }
+  } catch(e) {}
+}
+
 </script>
 </body>
 </html>
